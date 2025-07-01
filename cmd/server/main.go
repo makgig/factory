@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,10 @@ import (
 )
 
 func main() {
+	// Парсим флаги
+	address := flag.String("a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
+	flag.Parse()
+
 	// 1. Создаем хранилище
 	storage := repository.New()
 
@@ -26,8 +31,8 @@ func main() {
 	h.SetupRoutes(router)
 
 	// 6. Запускаем сервер
-	log.Println("Запускаем сервер на :8080")
-	if err := router.Run(":8080"); err != nil {
+	log.Printf("Запускаем сервер на %s", *address)
+	if err := router.Run(*address); err != nil {
 		log.Fatal("Ошибка запуска сервера:", err)
 	}
 }
