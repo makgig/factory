@@ -5,11 +5,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/makgig/factory/internal/repository"
 	"github.com/makgig/factory/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// init отключает логи Gin для всех тестов
+func init() {
+	gin.SetMode(gin.TestMode)
+}
 
 func TestNew(t *testing.T) {
 	type args struct {
@@ -42,7 +48,7 @@ func TestHandler_SetupRoutes(t *testing.T) {
 		metricsService *service.MetricsService
 	}
 	type args struct {
-		mux *http.ServeMux
+		router *gin.Engine
 	}
 	tests := []struct {
 		name   string
@@ -55,7 +61,7 @@ func TestHandler_SetupRoutes(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				mux: http.NewServeMux(),
+				router: gin.New(),
 			},
 		},
 	}
@@ -66,14 +72,14 @@ func TestHandler_SetupRoutes(t *testing.T) {
 				metricsService: tt.fields.metricsService,
 			}
 
-			h.SetupRoutes(tt.args.mux)
+			h.SetupRoutes(tt.args.router)
 
 			// Проверяем что роут /update/ настроен
 			req, err := http.NewRequest("POST", "/update/gauge/test/1.0", nil)
 			require.NoError(t, err, "should create request without error")
 
 			rr := httptest.NewRecorder()
-			tt.args.mux.ServeHTTP(rr, req)
+			tt.args.router.ServeHTTP(rr, req)
 
 			// Если роут настроен правильно, мы не должны получить 404
 			assert.NotEqual(t, http.StatusNotFound, rr.Code, "route /update/ should be configured")
@@ -86,8 +92,8 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		metricsService *service.MetricsService
 	}
 	type args struct {
-		w http.ResponseWriter
-		r *http.Request
+		method string
+		url    string
 	}
 	tests := []struct {
 		name           string
@@ -102,8 +108,8 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest("POST", "/update/gauge/temperature/23.5", nil),
+				method: "POST",
+				url:    "/update/gauge/temperature/23.5",
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody:   "OK",
@@ -114,8 +120,8 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest("POST", "/update/counter/requests/100", nil),
+				method: "POST",
+				url:    "/update/counter/requests/100",
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody:   "OK",
@@ -126,11 +132,11 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest("GET", "/update/gauge/temperature/23.5", nil),
+				method: "GET",
+				url:    "/update/gauge/temperature/23.5",
 			},
 			expectedStatus: http.StatusMethodNotAllowed,
-			expectedBody:   "Method not allowed\n",
+			expectedBody:   "Method not allowed",
 		},
 		{
 			name: "invalid URL format",
@@ -138,11 +144,11 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest("POST", "/update/gauge/temperature", nil),
+				method: "POST",
+				url:    "/update/gauge/temperature",
 			},
 			expectedStatus: http.StatusNotFound,
-			expectedBody:   "Invalid URL format\n",
+			expectedBody:   "404 page not found",
 		},
 		{
 			name: "empty metric name",
@@ -150,11 +156,11 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest("POST", "/update/gauge//23.5", nil),
+				method: "POST",
+				url:    "/update/gauge//23.5",
 			},
 			expectedStatus: http.StatusNotFound,
-			expectedBody:   "metric name is required\n",
+			expectedBody:   "metric name is required",
 		},
 		{
 			name: "invalid metric type",
@@ -162,11 +168,11 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest("POST", "/update/invalid/temperature/23.5", nil),
+				method: "POST",
+				url:    "/update/invalid/temperature/23.5",
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "invalid metric type\n",
+			expectedBody:   "invalid metric type",
 		},
 		{
 			name: "invalid gauge value",
@@ -174,29 +180,61 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 				metricsService: service.New(repository.New()),
 			},
 			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest("POST", "/update/gauge/temperature/not_a_number", nil),
+				method: "POST",
+				url:    "/update/gauge/temperature/not_a_number",
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "invalid gauge value\n",
+			expectedBody:   "invalid gauge value",
+		},
+		{
+			name: "negative gauge value",
+			fields: fields{
+				metricsService: service.New(repository.New()),
+			},
+			args: args{
+				method: "POST",
+				url:    "/update/gauge/temperature/-10.5",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "OK",
+		},
+		{
+			name: "zero counter value",
+			fields: fields{
+				metricsService: service.New(repository.New()),
+			},
+			args: args{
+				method: "POST",
+				url:    "/update/counter/requests/0",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "OK",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Создаем Gin роутер для каждого теста
+			router := gin.New()
 			h := &Handler{
 				metricsService: tt.fields.metricsService,
 			}
+			h.SetupRoutes(router)
+			// Создаем HTTP запрос
+			req, err := http.NewRequest(tt.args.method, tt.args.url, nil)
+			require.NoError(t, err, "should create request without error")
 
-			// Создаем свежий ResponseRecorder для каждого теста
+			// Создаем ResponseRecorder
 			rr := httptest.NewRecorder()
 
-			// Вызываем handler
-			h.updateMetricHandler(rr, tt.args.r)
+			// Выполняем запрос
+			router.ServeHTTP(rr, req)
 
 			// Проверяем результат
 			assert.Equal(t, tt.expectedStatus, rr.Code, "status code should match")
-			assert.Equal(t, tt.expectedBody, rr.Body.String(), "response body should match")
+			if tt.expectedBody != "" {
+				assert.Equal(t, tt.expectedBody, rr.Body.String(), "response body should match")
+			}
 		})
 	}
 }

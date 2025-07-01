@@ -2,8 +2,8 @@ package main
 
 import (
 	"log"
-	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/makgig/factory/internal/handler"
 	"github.com/makgig/factory/internal/repository"
 	"github.com/makgig/factory/internal/service"
@@ -20,14 +20,14 @@ func main() {
 	h := handler.New(metricsService)
 
 	// 4. Создаем роутер
-	mux := http.NewServeMux()
+	router := gin.Default()
 
 	// 5. Настраиваем маршруты
-	h.SetupRoutes(mux)
+	h.SetupRoutes(router)
 
 	// 6. Запускаем сервер
 	log.Println("Запускаем сервер на :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	if err := router.Run(":8080"); err != nil {
 		log.Fatal("Ошибка запуска сервера:", err)
 	}
 }

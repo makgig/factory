@@ -2,8 +2,8 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/makgig/factory/internal/service"
 )
 
@@ -20,47 +20,41 @@ func New(metricsService *service.MetricsService) *Handler {
 }
 
 // SetupRoutes настраивает все маршруты
-func (h *Handler) SetupRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/update/", h.updateMetricHandler)
+func (h *Handler) SetupRoutes(router *gin.Engine) {
+	updateGroup := router.Group("/update")
+	updateGroup.Any("/:type/:name/:value", h.updateMetricHandler)
 }
 
 // updateMetricHandler обрабатывает POST /update/<ТИП>/<ИМЯ>/<ЗНАЧЕНИЕ>
-func (h *Handler) updateMetricHandler(w http.ResponseWriter, r *http.Request) {
-	// Проверяем метод
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+func (h *Handler) updateMetricHandler(c *gin.Context) {
+	// Проверяем метод - только POST разрешен
+	if c.Request.Method != http.MethodPost {
+		c.String(http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
+	// Получаем параметры из URL
+	metricType := c.Param("type")
+	metricName := c.Param("name")
+	metricValue := c.Param("value")
 
-	// Парсим URL: /update/gauge/temperature/23.5
-	path := strings.TrimPrefix(r.URL.Path, "/update/")
-	parts := strings.Split(path, "/")
-
-	// Проверяем что есть все 3 части: тип/имя/значение
-	if len(parts) != 3 {
-		http.Error(w, "Invalid URL format", http.StatusNotFound)
+	// Проверяем что имя метрики не пустое
+	if metricName == "" {
+		c.String(http.StatusNotFound, "metric name is required")
 		return
 	}
-
-	metricType := parts[0]
-	metricName := parts[1]
-	metricValue := parts[2]
 
 	// Вызываем сервис для обработки
 	if err := h.metricsService.UpdateMetric(metricType, metricName, metricValue); err != nil {
 		// Определяем HTTP статус по тексту ошибки
 		switch err.Error() {
 		case "metric name is required":
-			http.Error(w, err.Error(), http.StatusNotFound)
+			c.String(http.StatusNotFound, err.Error())
 		case "invalid metric type", "invalid gauge value", "invalid counter value":
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			c.String(http.StatusBadRequest, err.Error())
 		default:
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			c.String(http.StatusInternalServerError, "Internal server error")
 		}
 		return
 	}
-
-	// Успех
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	c.String(http.StatusOK, "OK")
 }
