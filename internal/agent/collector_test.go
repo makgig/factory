@@ -46,9 +46,10 @@ func TestCollector_CollectMetrics(t *testing.T) {
 		pollCount int64
 	}
 	tests := []struct {
-		name              string
-		fields            fields
-		expectedPollCount int64
+		name                     string
+		fields                   fields
+		expectedPollCount        int64
+		expectedMetricsPollCount int64 // отдельно для метрик
 	}{
 		{
 			name: "collect metrics with empty storage",
@@ -56,7 +57,8 @@ func TestCollector_CollectMetrics(t *testing.T) {
 				metrics:   NewMetricsStorage(),
 				pollCount: 0,
 			},
-			expectedPollCount: 1,
+			expectedPollCount:        1,
+			expectedMetricsPollCount: 1, // первый вызов AddCounter
 		},
 		{
 			name: "collect metrics multiple times",
@@ -64,7 +66,8 @@ func TestCollector_CollectMetrics(t *testing.T) {
 				metrics:   NewMetricsStorage(),
 				pollCount: 5,
 			},
-			expectedPollCount: 6, // 5 + 1
+			expectedPollCount:        6, // 5 + 1
+			expectedMetricsPollCount: 1, // только один вызов AddCounter в этом тесте
 		},
 		{
 			name: "collect metrics with existing data",
@@ -73,11 +76,14 @@ func TestCollector_CollectMetrics(t *testing.T) {
 					storage := NewMetricsStorage()
 					storage.SetGauge("existing_gauge", 123.45)
 					storage.AddCounter("existing_counter", 10)
+					// Предварительно добавляем PollCount
+					storage.AddCounter("PollCount", 2) // симулируем 2 предыдущих вызова
 					return storage
 				}(),
 				pollCount: 2,
 			},
-			expectedPollCount: 3, // 2 + 1
+			expectedPollCount:        3, // 2 + 1
+			expectedMetricsPollCount: 3, // 2 (предыдущие) + 1 (текущий)
 		},
 	}
 
@@ -97,7 +103,7 @@ func TestCollector_CollectMetrics(t *testing.T) {
 			// Проверяем что PollCount добавлен в counters
 			pollCountValue, exists := c.metrics.GetCounter("PollCount")
 			assert.True(t, exists, "PollCount should exist in counters")
-			assert.Equal(t, tt.expectedPollCount, pollCountValue, "PollCount value should match")
+			assert.Equal(t, tt.expectedMetricsPollCount, pollCountValue, "PollCount value should match")
 
 			// Проверяем что RandomValue добавлен в gauges
 			randomValue, exists := c.metrics.GetGauge("RandomValue")
