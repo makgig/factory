@@ -10,7 +10,7 @@ import (
 
 func TestNew(t *testing.T) {
 	type args struct {
-		storage *repository.MemStorage
+		storage repository.Storage
 	}
 	tests := []struct {
 		name string
@@ -42,7 +42,7 @@ func TestNew(t *testing.T) {
 
 func TestMetricsService_UpdateMetric(t *testing.T) {
 	type fields struct {
-		storage *repository.MemStorage
+		storage repository.Storage
 	}
 	type args struct {
 		metricType string
@@ -166,6 +166,209 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 			} else {
 				assert.NoError(t, err, "should not return an error")
 			}
+		})
+	}
+}
+
+func TestMetricsService_GetMetric(t *testing.T) {
+	type fields struct {
+		storage repository.Storage
+	}
+	type args struct {
+		metricType string
+		name       string
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		args      args
+		setupData func(repository.Storage)
+		want      string
+		wantErr   bool
+	}{
+		{
+			name: "get existing gauge metric",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {
+				storage.UpdateGauge("temperature", 23.5)
+			},
+			args: args{
+				metricType: "gauge",
+				name:       "temperature",
+			},
+			want:    "23.5",
+			wantErr: false,
+		},
+		{
+			name: "get existing counter metric",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {
+				storage.UpdateCounter("requests", 100)
+			},
+			args: args{
+				metricType: "counter",
+				name:       "requests",
+			},
+			want:    "100",
+			wantErr: false,
+		},
+		{
+			name: "get non-existing gauge metric",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {},
+			args: args{
+				metricType: "gauge",
+				name:       "nonexistent",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "get non-existing counter metric",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {},
+			args: args{
+				metricType: "counter",
+				name:       "nonexistent",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "invalid metric type",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {},
+			args: args{
+				metricType: "invalid",
+				name:       "test",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "empty metric name",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {},
+			args: args{
+				metricType: "gauge",
+				name:       "",
+			},
+			want:    "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Подготавливаем данные
+			if tt.setupData != nil {
+				tt.setupData(tt.fields.storage)
+			}
+
+			s := &MetricsService{
+				storage: tt.fields.storage,
+			}
+			got, err := s.GetMetric(tt.args.metricType, tt.args.name)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestMetricsService_GetAllMetrics(t *testing.T) {
+	type fields struct {
+		storage repository.Storage
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		setupData func(repository.Storage)
+		want      MetricsData
+	}{
+		{
+			name: "get all metrics from populated storage",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {
+				storage.UpdateGauge("temperature", 23.5)
+				storage.UpdateGauge("cpu_usage", 75.5)
+				storage.UpdateCounter("requests", 100)
+				storage.UpdateCounter("errors", 5)
+			},
+			want: MetricsData{
+				Gauges:   map[string]float64{"temperature": 23.5, "cpu_usage": 75.5},
+				Counters: map[string]int64{"requests": 100, "errors": 5},
+			},
+		},
+		{
+			name: "get all metrics from empty storage",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {},
+			want: MetricsData{
+				Gauges:   map[string]float64{},
+				Counters: map[string]int64{},
+			},
+		},
+		{
+			name: "get all metrics with only gauges",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {
+				storage.UpdateGauge("temperature", 23.5)
+				storage.UpdateGauge("pressure", 1013.25)
+			},
+			want: MetricsData{
+				Gauges:   map[string]float64{"temperature": 23.5, "pressure": 1013.25},
+				Counters: map[string]int64{},
+			},
+		},
+		{
+			name: "get all metrics with only counters",
+			fields: fields{
+				storage: repository.New(),
+			},
+			setupData: func(storage repository.Storage) {
+				storage.UpdateCounter("requests", 100)
+				storage.UpdateCounter("errors", 5)
+			},
+			want: MetricsData{
+				Gauges:   map[string]float64{},
+				Counters: map[string]int64{"requests": 100, "errors": 5},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Подготавливаем данные
+			if tt.setupData != nil {
+				tt.setupData(tt.fields.storage)
+			}
+
+			s := &MetricsService{
+				storage: tt.fields.storage,
+			}
+			got := s.GetAllMetrics()
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

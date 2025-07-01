@@ -74,15 +74,19 @@ func TestHandler_SetupRoutes(t *testing.T) {
 
 			h.SetupRoutes(tt.args.router)
 
-			// Проверяем что роут /update/ настроен
-			req, err := http.NewRequest("POST", "/update/gauge/test/1.0", nil)
-			require.NoError(t, err, "should create request without error")
+			// Проверяем что роуты настроены
+			routes := tt.args.router.Routes()
+			require.True(t, len(routes) > 0, "routes should be configured")
 
-			rr := httptest.NewRecorder()
-			tt.args.router.ServeHTTP(rr, req)
+			// Проверим наличие основных роутов
+			routePaths := make(map[string]bool)
+			for _, route := range routes {
+				routePaths[route.Method+" "+route.Path] = true
+			}
 
-			// Если роут настроен правильно, мы не должны получить 404
-			assert.NotEqual(t, http.StatusNotFound, rr.Code, "route /update/ should be configured")
+			assert.True(t, routePaths["GET /"], "GET / route should be configured")
+			assert.True(t, routePaths["GET /value/:type/:name"], "GET /value route should be configured")
+			assert.True(t, routePaths["POST /update/:type/:name/:value"], "POST /update route should be configured")
 		})
 	}
 }
@@ -234,6 +238,128 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, rr.Code, "status code should match")
 			if tt.expectedBody != "" {
 				assert.Equal(t, tt.expectedBody, rr.Body.String(), "response body should match")
+			}
+		})
+	}
+}
+
+func TestHandler_getMetricHandler(t *testing.T) {
+	type fields struct {
+		metricsService *service.MetricsService
+	}
+	type args struct {
+		c *gin.Context
+		w *httptest.ResponseRecorder
+	}
+	tests := []struct {
+		name           string
+		fields         fields
+		args           args
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name: "get existing gauge metric",
+			fields: fields{
+				metricsService: func() *service.MetricsService {
+					s := service.New(repository.New())
+					s.UpdateMetric("gauge", "temperature", "23.5")
+					return s
+				}(),
+			},
+			args: args{
+				w: httptest.NewRecorder(),
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "23.5",
+		},
+		{
+			name: "get non-existing metric",
+			fields: fields{
+				metricsService: service.New(repository.New()),
+			},
+			args: args{
+				w: httptest.NewRecorder(),
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "Metric not found",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Создаем контекст с сохраненным ResponseRecorder
+			c, _ := gin.CreateTestContext(tt.args.w)
+			c.Params = gin.Params{
+				{Key: "type", Value: "gauge"},
+				{Key: "name", Value: "temperature"},
+			}
+			if tt.name == "get non-existing metric" {
+				c.Params = gin.Params{
+					{Key: "type", Value: "gauge"},
+					{Key: "name", Value: "nonexistent"},
+				}
+			}
+
+			h := &Handler{
+				metricsService: tt.fields.metricsService,
+			}
+			h.getMetricHandler(c)
+
+			assert.Equal(t, tt.expectedStatus, tt.args.w.Code)
+			assert.Equal(t, tt.expectedBody, tt.args.w.Body.String())
+		})
+	}
+}
+
+func TestHandler_getAllMetricsHandler(t *testing.T) {
+	type fields struct {
+		metricsService *service.MetricsService
+	}
+	type args struct {
+		c *gin.Context
+		w *httptest.ResponseRecorder
+	}
+	tests := []struct {
+		name                string
+		fields              fields
+		args                args
+		expectedStatus      int
+		expectedContentType string
+		shouldContain       []string
+	}{
+		{
+			name: "get all metrics with data",
+			fields: fields{
+				metricsService: func() *service.MetricsService {
+					s := service.New(repository.New())
+					s.UpdateMetric("gauge", "temperature", "23.5")
+					s.UpdateMetric("counter", "requests", "100")
+					return s
+				}(),
+			},
+			args: args{
+				w: httptest.NewRecorder(),
+			},
+			expectedStatus:      http.StatusOK,
+			expectedContentType: "text/html; charset=utf-8",
+			shouldContain:       []string{"temperature: 23.5", "requests: 100"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(tt.args.w)
+
+			h := &Handler{
+				metricsService: tt.fields.metricsService,
+			}
+			h.getAllMetricsHandler(c)
+
+			assert.Equal(t, tt.expectedStatus, tt.args.w.Code)
+			assert.Equal(t, tt.expectedContentType, tt.args.w.Header().Get("Content-Type"))
+
+			body := tt.args.w.Body.String()
+			for _, content := range tt.shouldContain {
+				assert.Contains(t, body, content)
 			}
 		})
 	}
