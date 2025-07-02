@@ -54,7 +54,6 @@ func (h *Handler) updateMetricHandler(c *gin.Context) {
 
 	// Вызываем сервис для обработки
 	if err := h.metricsService.UpdateMetric(metricType, metricName, metricValue); err != nil {
-		// Определяем HTTP статус по тексту ошибки
 		switch {
 		case errors.Is(err, service.ErrMetricNameRequired):
 			c.String(http.StatusNotFound, err.Error())
