@@ -7,6 +7,15 @@ import (
 	"github.com/makgig/factory/internal/repository"
 )
 
+// Предопределенные ошибки
+var (
+	ErrMetricNameRequired  = errors.New("metric name is required")
+	ErrInvalidMetricType   = errors.New("invalid metric type")
+	ErrInvalidGaugeValue   = errors.New("invalid gauge value")
+	ErrInvalidCounterValue = errors.New("invalid counter value")
+	ErrMetricNotFound      = errors.New("metric not found")
+)
+
 // MetricsService обрабатывает бизнес-логику метрик
 type MetricsService struct {
 	storage repository.Storage
@@ -23,7 +32,7 @@ func New(storage repository.Storage) *MetricsService {
 func (s *MetricsService) UpdateMetric(metricType, name, value string) error {
 	// Проверяем что имя не пустое
 	if name == "" {
-		return errors.New("metric name is required")
+		return ErrMetricNameRequired
 	}
 
 	// Обрабатываем в зависимости от типа
@@ -32,7 +41,7 @@ func (s *MetricsService) UpdateMetric(metricType, name, value string) error {
 		// Парсим как float64
 		parsedValue, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			return errors.New("invalid gauge value")
+			return ErrInvalidGaugeValue
 		}
 
 		// Сохраняем в хранилище
@@ -43,7 +52,7 @@ func (s *MetricsService) UpdateMetric(metricType, name, value string) error {
 		// Парсим как int64
 		parsedValue, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			return errors.New("invalid counter value")
+			return ErrInvalidCounterValue
 		}
 
 		// Сохраняем в хранилище
@@ -51,7 +60,7 @@ func (s *MetricsService) UpdateMetric(metricType, name, value string) error {
 		return nil
 
 	default:
-		return errors.New("invalid metric type")
+		return ErrInvalidMetricType
 	}
 }
 
@@ -59,26 +68,26 @@ func (s *MetricsService) UpdateMetric(metricType, name, value string) error {
 func (s *MetricsService) GetMetric(metricType, name string) (string, error) {
 	// Проверяем что имя не пустое
 	if name == "" {
-		return "", errors.New("metric name is required")
+		return "", ErrMetricNameRequired
 	}
 
 	switch metricType {
 	case "gauge":
 		value, exists := s.storage.GetGauge(name)
 		if !exists {
-			return "", errors.New("metric not found")
+			return "", ErrMetricNotFound
 		}
 		return strconv.FormatFloat(value, 'f', -1, 64), nil
 
 	case "counter":
 		value, exists := s.storage.GetCounter(name)
 		if !exists {
-			return "", errors.New("metric not found")
+			return "", ErrMetricNotFound
 		}
 		return strconv.FormatInt(value, 10), nil
 
 	default:
-		return "", errors.New("invalid metric type")
+		return "", ErrInvalidMetricType
 	}
 }
 

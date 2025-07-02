@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -54,10 +55,12 @@ func (h *Handler) updateMetricHandler(c *gin.Context) {
 	// Вызываем сервис для обработки
 	if err := h.metricsService.UpdateMetric(metricType, metricName, metricValue); err != nil {
 		// Определяем HTTP статус по тексту ошибки
-		switch err.Error() {
-		case "metric name is required":
+		switch {
+		case errors.Is(err, service.ErrMetricNameRequired):
 			c.String(http.StatusNotFound, err.Error())
-		case "invalid metric type", "invalid gauge value", "invalid counter value":
+		case errors.Is(err, service.ErrInvalidMetricType),
+			errors.Is(err, service.ErrInvalidGaugeValue),
+			errors.Is(err, service.ErrInvalidCounterValue):
 			c.String(http.StatusBadRequest, err.Error())
 		default:
 			c.String(http.StatusInternalServerError, "Internal server error")
@@ -76,12 +79,12 @@ func (h *Handler) getMetricHandler(c *gin.Context) {
 	// Получаем метрику через сервис
 	value, err := h.metricsService.GetMetric(metricType, metricName)
 	if err != nil {
-		switch err.Error() {
-		case "metric not found":
+		switch {
+		case errors.Is(err, service.ErrMetricNotFound):
 			c.String(http.StatusNotFound, "Metric not found")
-		case "invalid metric type":
+		case errors.Is(err, service.ErrInvalidMetricType):
 			c.String(http.StatusBadRequest, "Invalid metric type")
-		case "metric name is required":
+		case errors.Is(err, service.ErrMetricNameRequired):
 			c.String(http.StatusBadRequest, "Metric name is required")
 		default:
 			c.String(http.StatusInternalServerError, "Internal server error")
