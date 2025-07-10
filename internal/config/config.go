@@ -57,6 +57,6 @@ func LoadAgentConfig() (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) ServerUrl() string {
+func (c *Config) ServerURL() string {
 	return "http://" + c.Address
 }
