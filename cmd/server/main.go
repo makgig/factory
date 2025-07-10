@@ -27,6 +27,7 @@ func main() {
 	h := handler.New(metricsService)
 
 	// 4. Создаем роутер
+	cfg.ApplyGinMode()
 	router := gin.Default()
 
 	// 5. Настраиваем маршруты

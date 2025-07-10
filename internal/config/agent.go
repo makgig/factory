@@ -6,37 +6,16 @@ import (
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/caarlos0/env/v10"
 )
 
-type Config struct {
-	Address        string        `env:"ADDRESS"`
-	ReportInterval time.Duration `env:"REPORT_INTERVAL"`
-	PollInterval   time.Duration `env:"POLL_INTERVAL"`
+type AgentConfig struct {
+	Address        string
+	ReportInterval time.Duration
+	PollInterval   time.Duration
 }
 
-func LoadServerConfig() (*Config, error) {
-	cfg := &Config{
-		Address: "localhost:8080",
-	}
-	address := flag.String("a", cfg.Address, "адрес эндпоинта HTTP-сервера")
-
-	if !flag.Parsed() {
-		flag.Parse()
-	}
-
-	cfg.Address = *address
-
-	if err := env.Parse(cfg); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func LoadAgentConfig() (*Config, error) {
-	cfg := &Config{
+func LoadAgentConfig() (*AgentConfig, error) {
+	cfg := &AgentConfig{
 		Address:        "localhost:8080",
 		ReportInterval: 10 * time.Second,
 		PollInterval:   2 * time.Second,
@@ -83,6 +62,6 @@ func LoadAgentConfig() (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) ServerURL() string {
+func (c *AgentConfig) ServerURL() string {
 	return "http://" + c.Address
 }
