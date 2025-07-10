@@ -35,20 +35,20 @@ func LoadServerConfig() (*Config, error) {
 func LoadAgentConfig() (*Config, error) {
 	cfg := &Config{
 		Address:        "localhost:8080",
-		ReportInterval: 10 * time.Second,
-		PollInterval:   2 * time.Second,
+		ReportInterval: 10,
+		PollInterval:   2,
 	}
 	address := flag.String("a", cfg.Address, "адрес эндпоинта HTTP-сервера")
-	reportInt := flag.Duration("r", cfg.ReportInterval, "частота отправки метрик на сервер (секунды)")
-	pollInt := flag.Duration("p", cfg.PollInterval, "частота опроса метрик из runtime (секунды)")
+	reportInt := flag.Int("r", int(cfg.ReportInterval), "частота отправки метрик на сервер (секунды)")
+	pollInt := flag.Int("p", int(cfg.PollInterval), "частота опроса метрик из runtime (секунды)")
 
 	if !flag.Parsed() {
 		flag.Parse()
 	}
 
 	cfg.Address = *address
-	cfg.ReportInterval = *reportInt
-	cfg.PollInterval = *pollInt
+	cfg.ReportInterval = time.Duration(*reportInt) * time.Second
+	cfg.PollInterval = time.Duration(*pollInt) * time.Second
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
