@@ -3,6 +3,7 @@ module github.com/makgig/factory
 go 1.23.5
 
 require (
+	github.com/caarlos0/env/v10 v10.0.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/stretchr/testify v1.10.0
 )

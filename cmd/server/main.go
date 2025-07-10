@@ -1,19 +1,21 @@
 package main
 
 import (
-	"flag"
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/makgig/factory/internal/config"
 	"github.com/makgig/factory/internal/handler"
 	"github.com/makgig/factory/internal/repository"
 	"github.com/makgig/factory/internal/service"
 )
 
 func main() {
-	// Парсим флаги
-	address := flag.String("a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
-	flag.Parse()
+	cfg, err := config.LoadServerConfig()
+
+	if err != nil {
+		log.Fatal("Ошибка конфигурации:", err)
+	}
 
 	// 1. Создаем хранилище
 	storage := repository.New()
@@ -31,8 +33,8 @@ func main() {
 	h.SetupRoutes(router)
 
 	// 6. Запускаем сервер
-	log.Printf("Запускаем сервер на %s", *address)
-	if err := router.Run(*address); err != nil {
+	log.Printf("Запускаем сервер на %s", cfg.Address)
+	if err := router.Run(cfg.Address); err != nil {
 		log.Fatal("Ошибка запуска сервера:", err)
 	}
 }
