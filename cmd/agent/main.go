@@ -14,7 +14,7 @@ func main() {
 	}
 
 	log.Printf("Настройки агента:")
-	log.Printf("- Сервер: %s", cfg.ServerUrl)
+	log.Printf("- Сервер: %s", cfg.ServerUrl())
 	log.Printf("- Интервал сбора: %v", cfg.PollInterval)
 	log.Printf("- Интервал отправки: %v", cfg.ReportInterval)
 
