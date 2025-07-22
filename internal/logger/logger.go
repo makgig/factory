@@ -51,7 +51,7 @@ func GinLogger() gin.HandlerFunc {
 
 		Log.Info("HTTP response sent",
 			zap.Int("status_code", c.Writer.Status()),
-			zap.Int("content_size", blw.body_size),
+			zap.Int("content_size", blw.bodySize),
 		)
 	}
 }
@@ -59,16 +59,16 @@ func GinLogger() gin.HandlerFunc {
 // bodyLogWriter — обёртка для подсчета размера ответа
 type bodyLogWriter struct {
 	gin.ResponseWriter
-	body      []byte
-	body_size int
+	body     []byte
+	bodySize int
 }
 
 func (w *bodyLogWriter) Write(b []byte) (int, error) {
-	w.body_size += len(b)
+	w.bodySize += len(b)
 	return w.ResponseWriter.Write(b)
 }
 
 func (w *bodyLogWriter) WriteString(s string) (int, error) {
-	w.body_size += len(s)
+	w.bodySize += len(s)
 	return w.ResponseWriter.WriteString(s)
 }
