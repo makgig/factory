@@ -38,6 +38,7 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
+	router.Use(middleware.Gzip())
 
 	// 5. Настраиваем маршруты
 	h.SetupRoutes(router)

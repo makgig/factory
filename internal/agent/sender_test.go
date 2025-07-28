@@ -1,6 +1,10 @@
 package agent
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -52,7 +56,7 @@ func TestNewSender(t *testing.T) {
 }
 
 func TestSender_SendMetrics(t *testing.T) {
-	// Создаем тестовый сервер
+	// Создаем тестовый сервер для JSON API с gzip поддержкой
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем метод и заголовки
 		if r.Method != "POST" {
@@ -63,10 +67,44 @@ func TestSender_SendMetrics(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if r.URL.Path != "/update" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// Проверяем gzip заголовки
+		assert.Equal(t, "gzip", r.Header.Get("Content-Encoding"), "должен быть Content-Encoding: gzip")
+		assert.Equal(t, "gzip", r.Header.Get("Accept-Encoding"), "должен быть Accept-Encoding: gzip")
+
+		// Читаем и распаковываем gzip данные
+		gzReader, err := gzip.NewReader(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer gzReader.Close()
+
+		body, err := io.ReadAll(gzReader)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		var metric models.Metrics
+		if err := json.Unmarshal(body, &metric); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// Проверяем что метрика валидна
+		if metric.ID == "" || metric.MType == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		// Возвращаем успех
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer server.Close()
 
@@ -84,7 +122,7 @@ func TestSender_SendMetrics(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "send valid metrics",
+			name: "send valid metrics with gzip",
 			fields: fields{
 				serverURL:  server.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second},
@@ -146,7 +184,7 @@ func TestSender_SendMetrics(t *testing.T) {
 }
 
 func TestSender_sendGauge(t *testing.T) {
-	// Создаем тестовый сервер
+	// Создаем тестовый сервер для JSON API с gzip поддержкой
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Проверяем URL и метод
 		if r.Method != "POST" {
@@ -157,9 +195,43 @@ func TestSender_sendGauge(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if r.URL.Path != "/update" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// Проверяем gzip заголовки
+		assert.Equal(t, "gzip", r.Header.Get("Content-Encoding"))
+		assert.Equal(t, "gzip", r.Header.Get("Accept-Encoding"))
+
+		// Читаем и распаковываем gzip JSON
+		gzReader, err := gzip.NewReader(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer gzReader.Close()
+
+		body, err := io.ReadAll(gzReader)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		var metric models.Metrics
+		if err := json.Unmarshal(body, &metric); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// Проверяем что это gauge метрика
+		if metric.MType != "gauge" || metric.Value == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer server.Close()
 
@@ -178,7 +250,7 @@ func TestSender_sendGauge(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "send valid gauge metric",
+			name: "send valid gauge metric with gzip",
 			fields: fields{
 				serverURL:  server.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second},
@@ -246,7 +318,7 @@ func TestSender_sendGauge(t *testing.T) {
 }
 
 func TestSender_sendCounter(t *testing.T) {
-	// Создаем тестовый сервер
+	// Создаем тестовый сервер для JSON API с gzip поддержкой
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -256,9 +328,43 @@ func TestSender_sendCounter(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if r.URL.Path != "/update" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// Проверяем gzip заголовки
+		assert.Equal(t, "gzip", r.Header.Get("Content-Encoding"))
+		assert.Equal(t, "gzip", r.Header.Get("Accept-Encoding"))
+
+		// Читаем и распаковываем gzip JSON
+		gzReader, err := gzip.NewReader(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer gzReader.Close()
+
+		body, err := io.ReadAll(gzReader)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		var metric models.Metrics
+		if err := json.Unmarshal(body, &metric); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// Проверяем что это counter метрика
+		if metric.MType != "counter" || metric.Delta == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer server.Close()
 
@@ -277,7 +383,7 @@ func TestSender_sendCounter(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "send valid counter metric",
+			name: "send valid counter metric with gzip",
 			fields: fields{
 				serverURL:  server.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second},
@@ -333,7 +439,7 @@ func TestSender_sendCounter(t *testing.T) {
 }
 
 func TestSender_sendJSONMetric(t *testing.T) {
-	// Создаем тестовый сервер с разными ответами
+	// Создаем тестовый сервер с разными ответами для gzip
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/update":
@@ -345,6 +451,41 @@ func TestSender_sendJSONMetric(t *testing.T) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
+
+			// Проверяем gzip заголовки
+			contentEncoding := r.Header.Get("Content-Encoding")
+			acceptEncoding := r.Header.Get("Accept-Encoding")
+
+			if contentEncoding != "gzip" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if acceptEncoding != "gzip" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Распаковываем gzip данные
+			gzReader, err := gzip.NewReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			defer gzReader.Close()
+
+			body, err := io.ReadAll(gzReader)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Проверяем что JSON валиден
+			var metric models.Metrics
+			if err := json.Unmarshal(body, &metric); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"status":"ok"}`))
 		case "/error":
@@ -374,7 +515,7 @@ func TestSender_sendJSONMetric(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "send valid gauge metric",
+			name: "send valid gauge metric with gzip",
 			fields: fields{
 				serverURL:  server.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second},
@@ -389,7 +530,7 @@ func TestSender_sendJSONMetric(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "send valid counter metric",
+			name: "send valid counter metric with gzip",
 			fields: fields{
 				serverURL:  server.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second},
@@ -436,4 +577,62 @@ func TestSender_sendJSONMetric(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSender_GzipCompression(t *testing.T) {
+	// Специальный тест для проверки что данные действительно сжимаются
+	var receivedHeaders http.Header
+	var receivedBody []byte
+	var isCompressed bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeaders = r.Header.Clone()
+
+		// Проверяем сжатие
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			isCompressed = true
+			// Читаем сжатые данные без распаковки
+			body, _ := io.ReadAll(r.Body)
+			receivedBody = body
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	sender := NewSender(server.URL)
+
+	// Отправляем тестовую метрику
+	metric := models.Metrics{
+		ID:    "test_metric",
+		MType: "gauge",
+		Value: func() *float64 { v := 123.456; return &v }(),
+	}
+
+	err := sender.sendJSONMetric(metric)
+	require.NoError(t, err)
+
+	// Проверяем что данные были сжаты
+	assert.True(t, isCompressed, "данные должны быть сжаты")
+	assert.Equal(t, "gzip", receivedHeaders.Get("Content-Encoding"))
+	assert.Equal(t, "gzip", receivedHeaders.Get("Accept-Encoding"))
+	assert.Equal(t, "application/json", receivedHeaders.Get("Content-Type"))
+
+	// Проверяем что можем распаковать полученные данные
+	gzReader, err := gzip.NewReader(bytes.NewReader(receivedBody))
+	require.NoError(t, err)
+	defer gzReader.Close()
+
+	uncompressedData, err := io.ReadAll(gzReader)
+	require.NoError(t, err)
+
+	var unpackedMetric models.Metrics
+	err = json.Unmarshal(uncompressedData, &unpackedMetric)
+	require.NoError(t, err)
+
+	// Проверяем что метрика корректна
+	assert.Equal(t, "test_metric", unpackedMetric.ID)
+	assert.Equal(t, "gauge", unpackedMetric.MType)
+	assert.Equal(t, 123.456, *unpackedMetric.Value)
 }

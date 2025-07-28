@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -80,17 +81,29 @@ func (s *Sender) sendJSONMetric(metric models.Metrics) error {
 		return fmt.Errorf("ошибка сериализации JSON: %w", err)
 	}
 
+	// Сжимаем JSON данные
+	var compressedData bytes.Buffer
+	gzWriter := gzip.NewWriter(&compressedData)
+	if _, err := gzWriter.Write(jsonData); err != nil {
+		return fmt.Errorf("ошибка сжатия данных: %w", err)
+	}
+	if err := gzWriter.Close(); err != nil {
+		return fmt.Errorf("ошибка финализации сжатия: %w", err)
+	}
+
 	// Формируем URL для нового эндпоинта
 	url := fmt.Sprintf("%s/update", s.serverURL)
 
 	// Создаем запрос с JSON телом
-	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonData))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(compressedData.Bytes()))
 	if err != nil {
 		return fmt.Errorf("создание запроса: %w", err)
 	}
 
 	// Устанавливаем заголовки
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
 
 	// Выполняем запрос
 	resp, err := s.httpClient.Do(req)
