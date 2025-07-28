@@ -9,6 +9,7 @@ import (
 	"github.com/makgig/factory/internal/config"
 	"github.com/makgig/factory/internal/handler"
 	"github.com/makgig/factory/internal/logger"
+	"github.com/makgig/factory/internal/middleware"
 	"github.com/makgig/factory/internal/repository"
 	"github.com/makgig/factory/internal/service"
 )
@@ -36,7 +37,7 @@ func main() {
 	cfg.ApplyGinMode()
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(logger.GinLogger())
+	router.Use(middleware.Logger())
 
 	// 5. Настраиваем маршруты
 	h.SetupRoutes(router)

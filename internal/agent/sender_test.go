@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/makgig/factory/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +59,7 @@ func TestSender_SendMetrics(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if r.Header.Get("Content-Type") != "text/plain" {
+		if r.Header.Get("Content-Type") != "application/json" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -152,7 +153,7 @@ func TestSender_sendGauge(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if r.Header.Get("Content-Type") != "text/plain" {
+		if r.Header.Get("Content-Type") != "application/json" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -251,7 +252,7 @@ func TestSender_sendCounter(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if r.Header.Get("Content-Type") != "text/plain" {
+		if r.Header.Get("Content-Type") != "application/json" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -331,13 +332,21 @@ func TestSender_sendCounter(t *testing.T) {
 	}
 }
 
-func TestSender_sendRequest(t *testing.T) {
+func TestSender_sendJSONMetric(t *testing.T) {
 	// Создаем тестовый сервер с разными ответами
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/success":
+		case "/update":
+			if r.Method != "POST" {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if r.Header.Get("Content-Type") != "application/json" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
+			w.Write([]byte(`{"status":"ok"}`))
 		case "/error":
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Bad Request"))
@@ -356,7 +365,7 @@ func TestSender_sendRequest(t *testing.T) {
 		httpClient *http.Client
 	}
 	type args struct {
-		url string
+		metric models.Metrics
 	}
 	tests := []struct {
 		name    string
@@ -365,46 +374,47 @@ func TestSender_sendRequest(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "successful request",
+			name: "send valid gauge metric",
 			fields: fields{
 				serverURL:  server.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second},
 			},
 			args: args{
-				url: server.URL + "/success",
+				metric: models.Metrics{
+					ID:    "temperature",
+					MType: "gauge",
+					Value: func() *float64 { v := 23.5; return &v }(),
+				},
 			},
 			wantErr: false,
 		},
 		{
-			name: "bad request",
+			name: "send valid counter metric",
 			fields: fields{
 				serverURL:  server.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second},
 			},
 			args: args{
-				url: server.URL + "/error",
+				metric: models.Metrics{
+					ID:    "requests",
+					MType: "counter",
+					Delta: func() *int64 { v := int64(100); return &v }(),
+				},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name: "server error",
+			name: "send to invalid server",
 			fields: fields{
-				serverURL:  server.URL,
-				httpClient: &http.Client{Timeout: 5 * time.Second},
-			},
-			args: args{
-				url: server.URL + "/server-error",
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid URL",
-			fields: fields{
-				serverURL:  server.URL,
+				serverURL:  "http://invalid-server:99999",
 				httpClient: &http.Client{Timeout: 1 * time.Second},
 			},
 			args: args{
-				url: "invalid-url",
+				metric: models.Metrics{
+					ID:    "temperature",
+					MType: "gauge",
+					Value: func() *float64 { v := 23.5; return &v }(),
+				},
 			},
 			wantErr: true,
 		},
@@ -417,7 +427,7 @@ func TestSender_sendRequest(t *testing.T) {
 				httpClient: tt.fields.httpClient,
 			}
 
-			err := s.sendRequest(tt.args.url)
+			err := s.sendJSONMetric(tt.args.metric)
 
 			if tt.wantErr {
 				assert.Error(t, err, "should return an error")
