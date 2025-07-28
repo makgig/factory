@@ -29,7 +29,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "create handler with valid service",
 			args: args{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 		},
 	}
@@ -59,7 +59,7 @@ func TestHandler_SetupRoutes(t *testing.T) {
 		{
 			name: "setup routes with valid service and mux",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				router: gin.New(),
@@ -110,7 +110,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "valid gauge metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -122,7 +122,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "valid counter metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -134,7 +134,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "method not allowed",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "GET",
@@ -146,7 +146,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "invalid URL format",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -158,7 +158,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "empty metric name",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -170,7 +170,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "invalid metric type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -182,7 +182,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "invalid gauge value",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -194,7 +194,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "negative gauge value",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -206,7 +206,7 @@ func TestHandler_updateMetricHandler(t *testing.T) {
 		{
 			name: "zero counter value",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method: "POST",
@@ -263,7 +263,7 @@ func TestHandler_getMetricHandler(t *testing.T) {
 			name: "get existing gauge metric",
 			fields: fields{
 				metricsService: func() *service.MetricsService {
-					s := service.New(repository.New())
+					s := service.New(repository.New(""))
 					s.UpdateMetric("gauge", "temperature", "23.5")
 					return s
 				}(),
@@ -277,7 +277,7 @@ func TestHandler_getMetricHandler(t *testing.T) {
 		{
 			name: "get non-existing metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				w: httptest.NewRecorder(),
@@ -332,7 +332,7 @@ func TestHandler_getAllMetricsHandler(t *testing.T) {
 			name: "get all metrics with data",
 			fields: fields{
 				metricsService: func() *service.MetricsService {
-					s := service.New(repository.New())
+					s := service.New(repository.New(""))
 					s.UpdateMetric("gauge", "temperature", "23.5")
 					s.UpdateMetric("counter", "requests", "100")
 					return s
@@ -386,7 +386,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "valid gauge metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -400,7 +400,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "valid counter metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -414,7 +414,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "missing content type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -428,7 +428,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "wrong content type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -442,7 +442,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "invalid JSON format",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -456,7 +456,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "missing metric id",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -470,7 +470,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "missing metric type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -484,7 +484,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "invalid metric type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -498,7 +498,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "gauge without value",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -512,7 +512,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "counter without delta",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -526,7 +526,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "negative gauge value",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -540,7 +540,7 @@ func TestHandler_updateMetricJSONHandler(t *testing.T) {
 		{
 			name: "zero counter delta",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			args: args{
 				method:      "POST",
@@ -606,7 +606,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "get existing gauge metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {
 				s.UpdateMetric("gauge", "temperature", "23.5")
@@ -623,7 +623,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "get existing counter metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {
 				s.UpdateMetric("counter", "requests", "100")
@@ -640,7 +640,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "missing content type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -655,7 +655,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "wrong content type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -670,7 +670,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "invalid JSON format",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -685,7 +685,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "missing metric id",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -700,7 +700,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "missing metric type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -715,7 +715,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "invalid metric type",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -730,7 +730,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "non-existing gauge metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -745,7 +745,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "non-existing counter metric",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {},
 			args: args{
@@ -760,7 +760,7 @@ func TestHandler_getMetricJSONHandler(t *testing.T) {
 		{
 			name: "get gauge with negative value",
 			fields: fields{
-				metricsService: service.New(repository.New()),
+				metricsService: service.New(repository.New("")),
 			},
 			setupData: func(s *service.MetricsService) {
 				s.UpdateMetric("gauge", "temperature", "-10.5")

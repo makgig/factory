@@ -17,7 +17,7 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage := New()
+			storage := New("")
 
 			require.NotNil(t, storage, "New() should not return nil")
 			require.NotNil(t, storage.GetAllGauges(), "gauges map should not be nil")
