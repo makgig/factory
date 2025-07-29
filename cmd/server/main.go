@@ -76,13 +76,6 @@ func main() {
 	// 6. Создаем роутер
 	cfg.ApplyGinMode()
 	router := gin.New()
-
-	// 🔥 ОТЛАДКА 1: Логируем ВСЕ входящие запросы
-	router.Use(func(c *gin.Context) {
-		fmt.Printf("🌐 INCOMING REQUEST: %s %s\n", c.Request.Method, c.Request.URL.Path)
-		c.Next()
-	})
-
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
 	router.Use(middleware.Gzip())
@@ -90,19 +83,16 @@ func main() {
 	// 7. Настраиваем маршруты
 	h.SetupRoutes(router)
 
-	// 🔥 ОТЛАДКА 2: Выводим все зарегистрированные роуты
-	fmt.Println("\n🚀 REGISTERED ROUTES:")
-	for _, route := range router.Routes() {
-		fmt.Printf("   %s %s\n", route.Method, route.Path)
-	}
-	fmt.Println()
-
 	// 8. Сохраняем метрики при нормальном завершении
 	defer func() {
+		fmt.Println("🔥 DEFER CALLED! Начинаем сохранение...") // ← ДОБАВИТЬ
 		logger.Log.Info("Сохраняем метрики при завершении...")
+
 		if err := storage.SaveToFile(); err != nil {
+			fmt.Printf("🔥 DEFER ERROR: %v\n", err) // ← ДОБАВИТЬ
 			logger.Log.Error("Ошибка сохранения метрик при завершении", zap.Error(err))
 		} else {
+			fmt.Println("🔥 DEFER SUCCESS: файл сохранен") // ← ДОБАВИТЬ
 			logger.Log.Info("Метрики сохранены при завершении", zap.String("file", cfg.FileStoragePath))
 		}
 	}()

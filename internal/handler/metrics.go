@@ -45,7 +45,6 @@ func (h *Handler) SetupRoutes(router *gin.Engine) {
 
 // getMetricJSONHandler обрабатывает POST /value с JSON телом
 func (h *Handler) getMetricJSONHandler(c *gin.Context) {
-	fmt.Printf("🔥 getMetricJSONHandler CALLED! Path: %s\n", c.Request.URL.Path)
 	var request models.Metrics
 
 	// Парсим JSON из тела запроса
