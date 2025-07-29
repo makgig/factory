@@ -75,9 +75,6 @@ func main() {
 	// 6. Создаем роутер
 	cfg.ApplyGinMode()
 	router := gin.New()
-
-	router.Use(middleware.TrailingSlash())
-
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
 	router.Use(middleware.Gzip())
