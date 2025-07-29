@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
-
-	"go.uber.org/zap"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/makgig/factory/internal/config"
@@ -12,6 +16,7 @@ import (
 	"github.com/makgig/factory/internal/middleware"
 	"github.com/makgig/factory/internal/repository"
 	"github.com/makgig/factory/internal/service"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -46,26 +51,21 @@ func main() {
 
 	// 3. Загружаем сохраненные данные при старте (если нужно)
 	if cfg.Restore {
-		if err := storage.LoadFromFile(); err != nil {
-			logger.Log.Error("Ошибка загрузки метрик из файла", zap.Error(err))
-		} else {
-			logger.Log.Info("Метрики успешно загружены из файла", zap.String("file", cfg.FileStoragePath))
-		}
 		// Проверяем существует ли файл
-		// if _, err := os.Stat(cfg.FileStoragePath); err != nil {
-		// 	if os.IsNotExist(err) {
-		// 		logger.Log.Info("Файл метрик не найден, начинаем с пустого хранилища", zap.String("file", cfg.FileStoragePath))
-		// 	} else {
-		// 		logger.Log.Error("Ошибка проверки файла метрик", zap.Error(err))
-		// 	}
-		// } else {
-		// 	// Файл существует - загружаем
-		// 	if err := storage.LoadFromFile(); err != nil {
-		// 		logger.Log.Error("Ошибка загрузки метрик из файла", zap.Error(err))
-		// 	} else {
-		// 		logger.Log.Info("Метрики успешно загружены из файла", zap.String("file", cfg.FileStoragePath))
-		// 	}
-		// }
+		if _, err := os.Stat(cfg.FileStoragePath); err != nil {
+			if os.IsNotExist(err) {
+				logger.Log.Info("Файл метрик не найден, начинаем с пустого хранилища", zap.String("file", cfg.FileStoragePath))
+			} else {
+				logger.Log.Error("Ошибка проверки файла метрик", zap.Error(err))
+			}
+		} else {
+			// Файл существует - загружаем
+			if err := storage.LoadFromFile(); err != nil {
+				logger.Log.Error("Ошибка загрузки метрик из файла", zap.Error(err))
+			} else {
+				logger.Log.Info("Метрики успешно загружены из файла", zap.String("file", cfg.FileStoragePath))
+			}
+		}
 	} else {
 		logger.Log.Info("Загрузка метрик отключена (RESTORE=false)")
 	}
@@ -86,19 +86,43 @@ func main() {
 	// 7. Настраиваем маршруты
 	h.SetupRoutes(router)
 
-	// 8. Сохраняем метрики при нормальном завершении
-	defer func() {
-		logger.Log.Info("Сохраняем метрики при завершении...")
-		if err := storage.SaveToFile(); err != nil {
-			logger.Log.Error("Ошибка сохранения метрик при завершении", zap.Error(err))
-		} else {
-			logger.Log.Info("Метрики сохранены при завершении", zap.String("file", cfg.FileStoragePath))
+	// 8. Создаем HTTP сервер
+	srv := &http.Server{
+		Addr:    cfg.Address,
+		Handler: router,
+	}
+
+	// 9. Запускаем сервер в горутине
+	go func() {
+		logger.Log.Info("Запускаем сервер", zap.String("address", cfg.Address))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Log.Fatal("Ошибка запуска сервера", zap.Error(err))
 		}
 	}()
 
-	// 9. Запускаем сервер
-	logger.Log.Info("Запускаем сервер", zap.String("address", cfg.Address))
-	if err := router.Run(cfg.Address); err != nil {
-		logger.Log.Fatal("Ошибка запуска сервера", zap.Error(err))
+	// 10. Настраиваем graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Блокируемся до получения сигнала
+	<-quit
+	logger.Log.Info("Получен сигнал завершения, останавливаем сервер...")
+
+	// 11. Сохраняем метрики перед завершением
+	logger.Log.Info("Сохраняем метрики при завершении...")
+	if err := storage.SaveToFile(); err != nil {
+		logger.Log.Error("Ошибка сохранения метрик при завершении", zap.Error(err))
+	} else {
+		logger.Log.Info("Метрики сохранены при завершении", zap.String("file", cfg.FileStoragePath))
 	}
+
+	// 12. Даем серверу 5 секунд на graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Log.Fatal("Принудительное завершение сервера", zap.Error(err))
+	}
+
+	logger.Log.Info("Сервер корректно завершен")
 }
