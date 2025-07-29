@@ -76,8 +76,7 @@ func main() {
 	cfg.ApplyGinMode()
 	router := gin.New()
 
-	// Включаем автоматический редирект для trailing slash
-	router.RedirectTrailingSlash = true
+	router.Use(middleware.TrailingSlash())
 
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
