@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
 
 	"go.uber.org/zap"
 
@@ -47,21 +46,26 @@ func main() {
 
 	// 3. Загружаем сохраненные данные при старте (если нужно)
 	if cfg.Restore {
-		// Проверяем существует ли файл
-		if _, err := os.Stat(cfg.FileStoragePath); err != nil {
-			if os.IsNotExist(err) {
-				logger.Log.Info("Файл метрик не найден, начинаем с пустого хранилища", zap.String("file", cfg.FileStoragePath))
-			} else {
-				logger.Log.Error("Ошибка проверки файла метрик", zap.Error(err))
-			}
+		if err := storage.LoadFromFile(); err != nil {
+			logger.Log.Error("Ошибка загрузки метрик из файла", zap.Error(err))
 		} else {
-			// Файл существует - загружаем
-			if err := storage.LoadFromFile(); err != nil {
-				logger.Log.Error("Ошибка загрузки метрик из файла", zap.Error(err))
-			} else {
-				logger.Log.Info("Метрики успешно загружены из файла", zap.String("file", cfg.FileStoragePath))
-			}
+			logger.Log.Info("Метрики успешно загружены из файла", zap.String("file", cfg.FileStoragePath))
 		}
+		// Проверяем существует ли файл
+		// if _, err := os.Stat(cfg.FileStoragePath); err != nil {
+		// 	if os.IsNotExist(err) {
+		// 		logger.Log.Info("Файл метрик не найден, начинаем с пустого хранилища", zap.String("file", cfg.FileStoragePath))
+		// 	} else {
+		// 		logger.Log.Error("Ошибка проверки файла метрик", zap.Error(err))
+		// 	}
+		// } else {
+		// 	// Файл существует - загружаем
+		// 	if err := storage.LoadFromFile(); err != nil {
+		// 		logger.Log.Error("Ошибка загрузки метрик из файла", zap.Error(err))
+		// 	} else {
+		// 		logger.Log.Info("Метрики успешно загружены из файла", zap.String("file", cfg.FileStoragePath))
+		// 	}
+		// }
 	} else {
 		logger.Log.Info("Загрузка метрик отключена (RESTORE=false)")
 	}
