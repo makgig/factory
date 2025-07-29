@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -75,12 +76,26 @@ func main() {
 	// 6. Создаем роутер
 	cfg.ApplyGinMode()
 	router := gin.New()
+
+	// 🔥 ОТЛАДКА 1: Логируем ВСЕ входящие запросы
+	router.Use(func(c *gin.Context) {
+		fmt.Printf("🌐 INCOMING REQUEST: %s %s\n", c.Request.Method, c.Request.URL.Path)
+		c.Next()
+	})
+
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
 	router.Use(middleware.Gzip())
 
 	// 7. Настраиваем маршруты
 	h.SetupRoutes(router)
+
+	// 🔥 ОТЛАДКА 2: Выводим все зарегистрированные роуты
+	fmt.Println("\n🚀 REGISTERED ROUTES:")
+	for _, route := range router.Routes() {
+		fmt.Printf("   %s %s\n", route.Method, route.Path)
+	}
+	fmt.Println()
 
 	// 8. Сохраняем метрики при нормальном завершении
 	defer func() {
