@@ -31,10 +31,8 @@ func (h *Handler) SetupRoutes(router *gin.Engine) {
 
 	// JSON endpoint для обновления метрик
 	router.POST("/update", middleware.JSONContentType(), h.updateMetricJSONHandler)
-	router.POST("/update/", middleware.JSONContentType(), h.updateMetricJSONHandler)
 
 	router.POST("/value", middleware.JSONContentType(), h.getMetricJSONHandler)
-	router.POST("/value/", middleware.JSONContentType(), h.getMetricJSONHandler)
 
 	// Роут для получения конкретной метрики - только GET
 	router.GET("/value/:type/:name", h.getMetricHandler)
