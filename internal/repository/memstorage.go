@@ -171,7 +171,20 @@ func (m *MemStorage) LoadFromFile() error {
 	data, err := os.ReadFile(m.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // Файл не существует - это нормально
+			// Файл не существует - создаем пустой
+			emptyMetrics := []models.Metrics{}
+			data, err := json.MarshalIndent(emptyMetrics, "", "  ")
+			if err != nil {
+				return err
+			}
+
+			err = os.WriteFile(m.filePath, data, 0644)
+			if err != nil {
+				return err
+			}
+
+			m.lastSaveTime = time.Now()
+			return nil // файл создан, метрик нет
 		}
 		return err
 	}
