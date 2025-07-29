@@ -2,7 +2,6 @@ package repository
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"time"
 
@@ -48,32 +47,19 @@ func (m *MemStorage) UpdateCounter(name string, value int64) {
 
 // checkAndSave проверяет и выполняет сохранение по условиям
 func (m *MemStorage) checkAndSave() {
-	fmt.Printf("🔥 checkAndSave CALLED: path=%s, syncSave=%v\n", m.filePath, m.syncSave) // ← ОТЛАДКА
-
 	if m.filePath == "" {
-		fmt.Println("🔥 checkAndSave: path пустой, выходим")
 		return // файл не настроен
 	}
 
 	// Синхронное сохранение
 	if m.syncSave {
-		fmt.Println("🔥 checkAndSave: syncSave=true, вызываем SaveToFile()")
 		m.SaveToFile()
 		return
 	}
 
 	// Периодическое сохранение - проверяем прошло ли достаточно времени
-	timeSince := time.Since(m.lastSaveTime)
-	shouldSave := m.storeInterval > 0 && timeSince >= m.storeInterval
-
-	fmt.Printf("🔥 checkAndSave: timeSince=%v, storeInterval=%v, shouldSave=%v\n",
-		timeSince, m.storeInterval, shouldSave)
-
-	if shouldSave {
-		fmt.Println("🔥 checkAndSave: интервал прошел, вызываем SaveToFile()")
+	if m.storeInterval > 0 && time.Since(m.lastSaveTime) >= m.storeInterval {
 		m.SaveToFile()
-	} else {
-		fmt.Println("🔥 checkAndSave: интервал не прошел, НЕ сохраняем")
 	}
 }
 
@@ -109,10 +95,7 @@ func (m *MemStorage) GetAllCounters() map[string]int64 {
 
 // SaveToFile сохраняет метрики в JSON файл
 func (m *MemStorage) SaveToFile() error {
-	fmt.Printf("🔥 SaveToFile CALLED: path=%s\n", m.filePath) // ← ОТЛАДКА
-
 	if m.filePath == "" {
-		fmt.Println("🔥 SaveToFile: path пустой, выходим")
 		return nil // Файл не настроен
 	}
 
@@ -139,24 +122,16 @@ func (m *MemStorage) SaveToFile() error {
 		})
 	}
 
-	fmt.Printf("🔥 SaveToFile: сохраняем %d gauge и %d counter метрик\n",
-		len(m.gauges), len(m.counters))
-
 	// Сериализуем в JSON
 	data, err := json.MarshalIndent(metrics, "", "  ")
 	if err != nil {
-		fmt.Printf("🔥 SaveToFile JSON ERROR: %v\n", err)
 		return err
 	}
 
 	// Записываем в файл
 	err = os.WriteFile(m.filePath, data, 0644)
 	if err == nil {
-		fmt.Printf("🔥 SaveToFile SUCCESS: файл %s сохранен, размер %d байт\n",
-			m.filePath, len(data))
 		m.lastSaveTime = time.Now() // обновляем время последнего сохранения
-	} else {
-		fmt.Printf("🔥 SaveToFile WRITE ERROR: %v\n", err)
 	}
 	return err
 }

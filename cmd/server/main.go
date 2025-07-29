@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -85,14 +84,10 @@ func main() {
 
 	// 8. Сохраняем метрики при нормальном завершении
 	defer func() {
-		fmt.Println("🔥 DEFER CALLED! Начинаем сохранение...") // ← ДОБАВИТЬ
 		logger.Log.Info("Сохраняем метрики при завершении...")
-
 		if err := storage.SaveToFile(); err != nil {
-			fmt.Printf("🔥 DEFER ERROR: %v\n", err) // ← ДОБАВИТЬ
 			logger.Log.Error("Ошибка сохранения метрик при завершении", zap.Error(err))
 		} else {
-			fmt.Println("🔥 DEFER SUCCESS: файл сохранен") // ← ДОБАВИТЬ
 			logger.Log.Info("Метрики сохранены при завершении", zap.String("file", cfg.FileStoragePath))
 		}
 	}()
