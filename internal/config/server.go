@@ -10,6 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	DefaultStoreIntervalsec = 300
+)
+
 type ServerConfig struct {
 	Address         string `env:"ADDRESS"`
 	Loglevel        string `env:"LOG_LEVEL"`
@@ -23,9 +27,9 @@ func LoadServerConfig() (*ServerConfig, error) {
 	cfg := &ServerConfig{
 		Address:         "localhost:8080",
 		Loglevel:        "info",
-		StoreInterval:   300 * time.Second, // 300 секунд по умолчанию
-		FileStoragePath: "metrics.json",    // файл по умолчанию
-		Restore:         true,              // по умолчанию загружаем данные
+		StoreInterval:   DefaultStoreIntervalsec * time.Second, // Интервал в секундах по умолчанию
+		FileStoragePath: "metrics.json",                        // файл по умолчанию
+		Restore:         true,                                  // по умолчанию загружаем данные
 	}
 	address := flag.String("a", cfg.Address, "адрес эндпоинта HTTP-сервера")
 	loglevel := flag.String("l", cfg.Loglevel, "уровень логирования")

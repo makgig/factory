@@ -14,8 +14,8 @@ func Logger() gin.HandlerFunc {
 		start := time.Now()
 
 		// Обёртка для подсчета размера ответа
-		blw := &bodyLogWriter{body: make([]byte, 0), ResponseWriter: c.Writer}
-		c.Writer = blw
+		logWriter := &bodyLogWriter{body: make([]byte, 0), ResponseWriter: c.Writer}
+		c.Writer = logWriter
 
 		c.Next()
 
@@ -30,7 +30,7 @@ func Logger() gin.HandlerFunc {
 
 		logger.Log.Info("HTTP response sent",
 			zap.Int("status_code", c.Writer.Status()),
-			zap.Int("content_size", blw.bodySize),
+			zap.Int("content_size", logWriter.bodySize),
 		)
 	}
 }
