@@ -1,10 +1,15 @@
 package agent
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"log"
+
+	"github.com/makgig/factory/internal/models"
+
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -49,31 +54,56 @@ func (s *Sender) SendMetrics(metrics AllMetrics) error {
 
 // sendGauge отправляет одну gauge метрику
 func (s *Sender) sendGauge(name string, value float64) error {
-	// Формат: POST /update/gauge/<ИМЯ>/<ЗНАЧЕНИЕ>
-	url := fmt.Sprintf("%s/update/gauge/%s/%s",
-		s.serverURL, name, strconv.FormatFloat(value, 'f', -1, 64))
+	metric := models.Metrics{
+		ID:    name,
+		MType: "gauge",
+		Value: &value,
+	}
 
-	return s.sendRequest(url)
+	return s.sendJSONMetric(metric)
 }
 
 // sendCounter отправляет одну counter метрику
 func (s *Sender) sendCounter(name string, value int64) error {
-	// Формат: POST /update/counter/<ИМЯ>/<ЗНАЧЕНИЕ>
-	url := fmt.Sprintf("%s/update/counter/%s/%d",
-		s.serverURL, name, value)
+	metric := models.Metrics{
+		ID:    name,
+		MType: "counter",
+		Delta: &value,
+	}
 
-	return s.sendRequest(url)
+	return s.sendJSONMetric(metric)
 }
 
-// sendRequest выполняет HTTP POST запрос
-func (s *Sender) sendRequest(url string) error {
-	req, err := http.NewRequest("POST", url, nil)
+func (s *Sender) sendJSONMetric(metric models.Metrics) error {
+	// Сериализуем в JSON
+	jsonData, err := json.Marshal(metric)
+	if err != nil {
+		return fmt.Errorf("ошибка сериализации JSON: %w", err)
+	}
+
+	// Сжимаем JSON данные
+	var compressedData bytes.Buffer
+	gzWriter := gzip.NewWriter(&compressedData)
+	if _, err := gzWriter.Write(jsonData); err != nil {
+		return fmt.Errorf("ошибка сжатия данных: %w", err)
+	}
+	if err := gzWriter.Close(); err != nil {
+		return fmt.Errorf("ошибка финализации сжатия: %w", err)
+	}
+
+	// Формируем URL для нового эндпоинта
+	url := fmt.Sprintf("%s/update", s.serverURL)
+
+	// Создаем запрос с JSON телом
+	req, err := http.NewRequest("POST", url, bytes.NewReader(compressedData.Bytes()))
 	if err != nil {
 		return fmt.Errorf("создание запроса: %w", err)
 	}
 
-	// Устанавливаем заголовок как в задании
-	req.Header.Set("Content-Type", "text/plain")
+	// Устанавливаем заголовки
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
 
 	// Выполняем запрос
 	resp, err := s.httpClient.Do(req)

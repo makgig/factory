@@ -1,37 +1,28 @@
 package main
 
 import (
-	"flag"
 	"log"
-	"time"
 
 	"github.com/makgig/factory/internal/agent"
+	"github.com/makgig/factory/internal/config"
 )
 
 func main() {
-	// Парсим флаги
-	address := flag.String("a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
-	reportInterval := flag.Int("r", 10, "частота отправки метрик на сервер (секунды)")
-	pollInterval := flag.Int("p", 2, "частота опроса метрик из runtime (секунды)")
-	flag.Parse()
-
-	log.Println("Запускаем агент сбора метрик...")
-
-	// Настройки агента
-	pollIntervalDuration := time.Duration(*pollInterval) * time.Second
-	reportIntervalDuration := time.Duration(*reportInterval) * time.Second
-	serverURL := "http://" + *address
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		log.Fatal("Ошибка конфигурации:", err)
+	}
 
 	log.Printf("Настройки агента:")
-	log.Printf("- Сервер: %s", serverURL)
-	log.Printf("- Интервал сбора: %v", pollIntervalDuration)
-	log.Printf("- Интервал отправки: %v", reportIntervalDuration)
+	log.Printf("- Сервер: %s", cfg.ServerURL())
+	log.Printf("- Интервал сбора: %v", cfg.PollInterval)
+	log.Printf("- Интервал отправки: %v", cfg.ReportInterval)
 
 	// Создаем агент
-	a := agent.New(serverURL)
+	a := agent.New(cfg.ServerURL())
 
 	// Запускаем агент
-	if err := a.Run(pollIntervalDuration, reportIntervalDuration); err != nil {
+	if err := a.Run(cfg.PollInterval, cfg.ReportInterval); err != nil {
 		log.Fatal("Ошибка работы агента:", err)
 	}
 }
