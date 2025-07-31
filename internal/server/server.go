@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -153,6 +154,12 @@ func (s *Server) logSaveMode() {
 // startPeriodicSaving запускает периодическое сохранение
 func (s *Server) startPeriodicSaving() {
 	if !s.cfg.IsSyncStore() && s.cfg.StoreInterval > 0 && s.cfg.FileStoragePath != "" {
+		// Убеждаемся, что директория для сохранения существует
+		if err := s.ensureStorageDirectory(); err != nil {
+			logger.Log.Error("Ошибка создания директории для периодического сохранения", zap.Error(err))
+			return
+		}
+
 		s.storage.StartSavingLoop()
 		logger.Log.Info("Запущено периодическое сохранение метрик",
 			zap.Duration("interval", s.cfg.StoreInterval))
@@ -172,6 +179,18 @@ func (s *Server) loadStoredData() error {
 	if !s.cfg.Restore {
 		logger.Log.Info("Загрузка метрик отключена (RESTORE=false)")
 		return nil
+	}
+
+	// Если путь к файлу не указан, нечего загружать
+	if s.cfg.FileStoragePath == "" {
+		logger.Log.Info("Путь к файлу метрик не указан, начинаем с пустого хранилища")
+		return nil
+	}
+
+	// Создаем директорию для файла метрик, если она не существует
+	if err := s.ensureStorageDirectory(); err != nil {
+		logger.Log.Error("Ошибка создания директории для файла метрик", zap.Error(err))
+		return nil // Не критично, продолжаем работу
 	}
 
 	// Проверяем существует ли файл
@@ -196,8 +215,42 @@ func (s *Server) loadStoredData() error {
 	return nil
 }
 
+// ensureStorageDirectory создает директорию для файла метрик, если она не существует
+func (s *Server) ensureStorageDirectory() error {
+	if s.cfg.FileStoragePath == "" {
+		return nil
+	}
+
+	dir := filepath.Dir(s.cfg.FileStoragePath)
+
+	// Если директория это текущая папка ".", то создавать нечего
+	if dir == "." {
+		return nil
+	}
+
+	// Создаем все необходимые директории
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	logger.Log.Debug("Директория для файла метрик создана",
+		zap.String("directory", dir))
+	return nil
+}
+
 // saveFinalMetrics сохраняет метрики при завершении
 func (s *Server) saveFinalMetrics() {
+	if s.cfg.FileStoragePath == "" {
+		logger.Log.Info("Путь к файлу не указан, пропускаем сохранение при завершении")
+		return
+	}
+
+	// Убеждаемся, что директория существует перед финальным сохранением
+	if err := s.ensureStorageDirectory(); err != nil {
+		logger.Log.Error("Ошибка создания директории для финального сохранения", zap.Error(err))
+		return
+	}
+
 	logger.Log.Info("Сохраняем метрики при завершении...")
 	if err := s.storage.SaveToFile(); err != nil {
 		logger.Log.Error("Ошибка сохранения метрик при завершении", zap.Error(err))
