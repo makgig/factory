@@ -21,8 +21,15 @@ type FilePersist interface {
 	SetStoreConfig(interval time.Duration, syncSave bool)
 }
 
+// BackgroundSaver интерфейс для управления фоновым сохранением
+type BackgroundSaver interface {
+	StartSavingLoop()
+	StopSavingLoop()
+}
+
 // интерфейс-комбинация
 type Storage interface {
 	MetricStorage
 	FilePersist
+	BackgroundSaver
 }

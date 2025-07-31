@@ -49,7 +49,14 @@ func main() {
 			zap.Duration("interval", cfg.StoreInterval))
 	}
 
-	// 3. Загружаем сохраненные данные при старте (если нужно)
+	// 3. Запускаем периодическое сохранение (если нужно)
+	if !cfg.IsSyncStore() && cfg.StoreInterval > 0 && cfg.FileStoragePath != "" {
+		storage.StartSavingLoop()
+		logger.Log.Info("Запущено периодическое сохранение метрик",
+			zap.Duration("interval", cfg.StoreInterval))
+	}
+
+	// 4. Загружаем сохраненные данные при старте (если нужно)
 	if cfg.Restore {
 		// Проверяем существует ли файл
 		if _, err := os.Stat(cfg.FileStoragePath); err != nil {
@@ -70,13 +77,13 @@ func main() {
 		logger.Log.Info("Загрузка метрик отключена (RESTORE=false)")
 	}
 
-	// 4. Создаем сервис с хранилищем
+	// 5. Создаем сервис с хранилищем
 	metricsService := service.New(storage)
 
-	// 5. Создаем handler с сервисом
+	// 6. Создаем handler с сервисом
 	h := handler.New(metricsService)
 
-	// 6. Создаем роутер
+	// 7. Создаем роутер
 	cfg.ApplyGinMode()
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -84,16 +91,16 @@ func main() {
 	router.Use(middleware.RequestDecompression())
 	router.Use(middleware.ResponseCompression())
 
-	// 7. Настраиваем маршруты
+	// 8. Настраиваем маршруты
 	h.SetupRoutes(router)
 
-	// 8. Создаем HTTP сервер
+	// 9. Создаем HTTP сервер
 	srv := &http.Server{
 		Addr:    cfg.Address,
 		Handler: router,
 	}
 
-	// 9. Запускаем сервер в горутине
+	// 10. Запускаем сервер в горутине
 	go func() {
 		logger.Log.Info("Запускаем сервер", zap.String("address", cfg.Address))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -101,7 +108,7 @@ func main() {
 		}
 	}()
 
-	// 10. Настраиваем graceful shutdown
+	// 11. Настраиваем graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -109,7 +116,13 @@ func main() {
 	<-quit
 	logger.Log.Info("Получен сигнал завершения, останавливаем сервер...")
 
-	// 11. Сохраняем метрики перед завершением
+	// 12. Останавливаем периодическое сохранение
+	if !cfg.IsSyncStore() && cfg.StoreInterval > 0 {
+		logger.Log.Info("Останавливаем периодическое сохранение...")
+		storage.StopSavingLoop()
+	}
+
+	// 13. Сохраняем метрики перед завершением
 	logger.Log.Info("Сохраняем метрики при завершении...")
 	if err := storage.SaveToFile(); err != nil {
 		logger.Log.Error("Ошибка сохранения метрик при завершении", zap.Error(err))
@@ -117,7 +130,7 @@ func main() {
 		logger.Log.Info("Метрики сохранены при завершении", zap.String("file", cfg.FileStoragePath))
 	}
 
-	// 12. Даем серверу 5 секунд на graceful shutdown
+	// 14. Даем серверу 5 секунд на graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
