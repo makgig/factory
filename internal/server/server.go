@@ -9,6 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gin-gonic/gin"
@@ -29,12 +32,24 @@ type Server struct {
 	httpServer     *http.Server
 	router         *gin.Engine
 	db             *pgxpool.Pool
+	openPool       openPoolFunc
+	pingPool       pingPoolFunc
+	newMigrator    newMigratorFunc
+	closePool      func(*pgxpool.Pool)
 }
 
 // New создает новый экземпляр сервера
 func New(cfg *config.ServerConfig) *Server {
 	return &Server{
-		cfg: cfg,
+		cfg:         cfg,
+		openPool:    openPoolDefault,
+		pingPool:    pingPoolDefault,
+		newMigrator: newMigratorDefault,
+		closePool: func(p *pgxpool.Pool) {
+			if p != nil {
+				p.Close()
+			}
+		},
 	}
 }
 
@@ -107,7 +122,8 @@ func (s *Server) Stop(ctx context.Context) error {
 
 	// корректно закрываем пул БД
 	if s.db != nil {
-		s.db.Close()
+		s.closePool(s.db)
+		s.db = nil
 	}
 
 	// Останавливаем HTTP сервер
@@ -146,15 +162,41 @@ func (s *Server) initializeDatabase() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, s.cfg.DatabaseDSN)
+	pool, err := s.openPool(ctx, s.cfg.DatabaseDSN)
 	if err != nil {
+		logger.Log.Error("не удалось подключиться к БД: %v", zap.Error(err))
 		return err
 	}
 
-	// Пинг сразу (чтобы отловить ошибку DSN на старте)
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
+	// Проверка соединения
+	if err := s.pingPool(ctx, pool); err != nil {
+		logger.Log.Error("БД недоступна: %v", zap.Error(err))
+		s.closePool(pool)
 		return err
+	}
+
+	// Инициализация и запуск миграций
+	m, err := s.newMigrator(s.cfg.DatabaseDSN)
+	if err != nil {
+		logger.Log.Error(
+			"не удалось инициализировать миграции",
+			zap.Error(err),
+			zap.String("hint", "проверьте, что папка 'migrations/' существует и содержит SQL-файлы, а DATABASE_DSN корректен"),
+		)
+		s.closePool(pool)
+		return err
+	}
+
+	if err := m.Up(); err != nil {
+		if err == migrate.ErrNoChange {
+			logger.Log.Info("Нет новых миграций — структура БД уже актуальна")
+		} else {
+			logger.Log.Error("ошибка применения миграций: %v", zap.Error(err))
+			s.closePool(pool)
+			return err
+		}
+	} else {
+		logger.Log.Info("Миграции успешно применены")
 	}
 
 	s.db = pool
@@ -164,6 +206,13 @@ func (s *Server) initializeDatabase() error {
 
 // initializeStorage настраивает хранилище метрик
 func (s *Server) initializeStorage() error {
+	// если БД инициализирована — используем её
+	if s.db != nil {
+		s.storage = repository.NewPostgres(s.db)
+		logger.Log.Info("Используется хранилище PostgreSQL")
+		return nil
+	}
+
 	// Создаем хранилище
 	s.storage = repository.New(s.cfg.FileStoragePath)
 
