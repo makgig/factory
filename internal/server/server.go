@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/gin-gonic/gin"
 	"github.com/makgig/factory/internal/config"
 	"github.com/makgig/factory/internal/handler"
@@ -26,6 +28,7 @@ type Server struct {
 	metricsService *service.MetricsService
 	httpServer     *http.Server
 	router         *gin.Engine
+	db             *pgxpool.Pool
 }
 
 // New создает новый экземпляр сервера
@@ -39,6 +42,11 @@ func New(cfg *config.ServerConfig) *Server {
 func (s *Server) Initialize() error {
 	// Инициализируем логер
 	if err := s.initializeLogger(); err != nil {
+		return err
+	}
+
+	// Инициализируем базу данных
+	if err := s.initializeDatabase(); err != nil {
 		return err
 	}
 
@@ -97,6 +105,11 @@ func (s *Server) Stop(ctx context.Context) error {
 	// Сохраняем финальные метрики
 	s.saveFinalMetrics()
 
+	// корректно закрываем пул БД
+	if s.db != nil {
+		s.db.Close()
+	}
+
 	// Останавливаем HTTP сервер
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		logger.Log.Error("Ошибка graceful shutdown", zap.Error(err))
@@ -120,6 +133,32 @@ func (s *Server) initializeLogger() error {
 		zap.Bool("restore", s.cfg.Restore),
 	)
 
+	return nil
+}
+
+// initializeDatabase настраивает подключение к базе данных
+func (s *Server) initializeDatabase() error {
+	if s.cfg.DatabaseDSN == "" {
+		logger.Log.Info("DATABASE_DSN пуст — подключение к БД пропущено")
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, s.cfg.DatabaseDSN)
+	if err != nil {
+		return err
+	}
+
+	// Пинг сразу (чтобы отловить ошибку DSN на старте)
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return err
+	}
+
+	s.db = pool
+	logger.Log.Info("Подключение к БД установлено (pgxpool)")
 	return nil
 }
 
@@ -275,6 +314,10 @@ func (s *Server) setupRouter() {
 	s.router.Use(middleware.Logger())
 	s.router.Use(middleware.RequestDecompression())
 	s.router.Use(middleware.ResponseCompression())
+
+	// health маршруты
+	health := handler.NewHealth(s.db)
+	health.SetupRoutes(s.router)
 
 	// Настраиваем маршруты
 	h := handler.New(s.metricsService)
