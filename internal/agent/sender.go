@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 
@@ -18,6 +19,8 @@ type Sender struct {
 	serverURL  string
 	httpClient *http.Client
 }
+
+var ErrBatchUnsupported = errors.New("batch api unsupported by server")
 
 // NewSender создает новый отправщик
 func NewSender(serverURL string) *Sender {
@@ -118,4 +121,92 @@ func (s *Sender) sendJSONMetric(metric models.Metrics) error {
 	}
 
 	return nil
+}
+
+// SendBatch отправляет []Metrics на POST /updates/ с gzip.
+// Пустые батчи НЕ отправляем (вернёт nil).
+func (s *Sender) SendBatch(items []models.Metrics) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// JSON
+	body, err := json.Marshal(items)
+	if err != nil {
+		return fmt.Errorf("marshal batch: %w", err)
+	}
+
+	// gzip
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(body); err != nil {
+		return fmt.Errorf("gzip write: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("gzip close: %w", err)
+	}
+
+	// Формируем URL
+	url := s.serverURL + "/updates/"
+
+	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return ErrBatchUnsupported
+	default:
+		return fmt.Errorf("batch response status: %d", resp.StatusCode)
+	}
+}
+
+func (s *Sender) SendAll(all AllMetrics) {
+	// 1) собрать []models.Metrics
+	var batch []models.Metrics
+	for name, v := range all.Gauges {
+		val := v
+		batch = append(batch, models.Metrics{ID: name, MType: "gauge", Value: &val})
+	}
+	for name, d := range all.Counters {
+		delta := d
+		batch = append(batch, models.Metrics{ID: name, MType: "counter", Delta: &delta})
+	}
+
+	// 2) попытка батчем
+	log.Println("Попытка отправки метрик батчем...")
+	if err := s.SendBatch(batch); err != nil {
+		if errors.Is(err, ErrBatchUnsupported) {
+			// Если батчевый API не поддерживается, переключаемся на старый метод
+			log.Println("Батчевый API не поддерживается, переключение на отправку по одной метрике.")
+			// 3) фолбэк — по старому API /update
+			for _, m := range batch {
+				if err := s.sendJSONMetric(m); err != nil {
+					log.Printf("Не удалось отправить метрику %s: %v", m.ID, err)
+				}
+			}
+			return
+		}
+		// Если произошла другая ошибка при батчевой отправке
+		log.Printf("Батчевая отправка не удалась из-за ошибки: %v. Попытка отправки по одной метрике.", err)
+		for _, m := range batch {
+			if err := s.sendJSONMetric(m); err != nil {
+				log.Printf("Не удалось отправить метрику %s: %v", m.ID, err)
+			}
+		}
+		return
+	}
+
+	log.Println("Метрики успешно отправлены батчем.")
 }
