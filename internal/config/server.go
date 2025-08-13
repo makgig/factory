@@ -21,6 +21,7 @@ type ServerConfig struct {
 	StoreInterval   time.Duration
 	FileStoragePath string `env:"FILE_STORAGE_PATH"`
 	Restore         bool
+	DatabaseDSN     string `env:"DATABASE_DSN"`
 }
 
 func LoadServerConfig() (*ServerConfig, error) {
@@ -30,12 +31,14 @@ func LoadServerConfig() (*ServerConfig, error) {
 		StoreInterval:   DefaultStoreIntervalsec * time.Second, // Интервал в секундах по умолчанию
 		FileStoragePath: "metrics.json",                        // файл по умолчанию
 		Restore:         true,                                  // по умолчанию загружаем данные
+		DatabaseDSN:     "",
 	}
 	address := flag.String("a", cfg.Address, "адрес эндпоинта HTTP-сервера")
 	loglevel := flag.String("l", cfg.Loglevel, "уровень логирования")
 	storeInterval := flag.Int("i", int(cfg.StoreInterval.Seconds()), "интервал сохранения метрик на диск (секунды)")
 	fileStoragePath := flag.String("f", cfg.FileStoragePath, "путь до файла для сохранения метрик")
 	restore := flag.Bool("r", cfg.Restore, "загружать ли ранее сохранённые значения при старте")
+	dsn := flag.String("d", cfg.DatabaseDSN, "адрес подключения к базе данных (PostgreSQL DSN)")
 
 	if !flag.Parsed() {
 		flag.Parse()
@@ -46,6 +49,7 @@ func LoadServerConfig() (*ServerConfig, error) {
 	cfg.StoreInterval = time.Duration(*storeInterval) * time.Second
 	cfg.FileStoragePath = *fileStoragePath
 	cfg.Restore = *restore
+	cfg.DatabaseDSN = *dsn
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
