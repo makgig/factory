@@ -226,3 +226,30 @@ func (m *MemStorage) LoadFromFile() error {
 
 	return nil
 }
+
+func (m *MemStorage) UpdateBatch(items []models.Metrics) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	m.mu.Lock()
+	for _, metric := range items {
+		switch metric.MType {
+		case "gauge":
+			if metric.Value != nil {
+				m.gauges[metric.ID] = *metric.Value
+			}
+		case "counter":
+			if metric.Delta != nil {
+				m.counters[metric.ID] += *metric.Delta
+			}
+		}
+	}
+	m.mu.Unlock()
+
+	// при syncSave + файловом пути — сохраним сразу
+	if m.syncSave && m.filePath != "" {
+		return m.SaveToFile()
+	}
+	return nil
+}

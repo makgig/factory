@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/makgig/factory/internal/models"
 )
 
 type PostgresStorage struct {
@@ -94,6 +95,49 @@ func (p *PostgresStorage) GetAllCounters() map[string]int64 {
 		}
 	}
 	return out
+}
+
+func (p *PostgresStorage) UpdateBatch(items []models.Metrics) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ctx := context.Background()
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		// если Commit не был вызван — откатим
+		_ = tx.Rollback(ctx)
+	}()
+
+	const upGauge = `
+		INSERT INTO gauges (name, value) VALUES ($1, $2)
+		ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value;`
+	const upCounter = `
+		INSERT INTO counters (name, delta) VALUES ($1, $2)
+		ON CONFLICT (name) DO UPDATE SET delta = counters.delta + EXCLUDED.delta;`
+
+	for _, m := range items {
+		switch m.MType {
+		case "gauge":
+			if m.Value != nil {
+				if _, err := tx.Exec(ctx, upGauge, m.ID, *m.Value); err != nil {
+					return err
+				}
+			}
+		case "counter":
+			if m.Delta != nil {
+				if _, err := tx.Exec(ctx, upCounter, m.ID, *m.Delta); err != nil {
+					return err
+				}
+			}
+		default:
+			// игнорим неизвестные типы, чтобы не ронять всю пачку
+			log.Printf("pg: unknown metric type %q for %s — skipped", m.MType, m.ID)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // ---- FilePersist / BackgroundSaver (для БД не актуальны) ----

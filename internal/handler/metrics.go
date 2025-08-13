@@ -34,6 +34,9 @@ func (h *Handler) SetupRoutes(router *gin.Engine) {
 
 	router.POST("/value", middleware.JSONContentType(), h.getMetricJSONHandler)
 
+	// батчевое обновление
+	router.POST("/updates/", middleware.JSONContentType(), h.updateBatch)
+
 	// Роут для получения конкретной метрики - только GET
 	router.GET("/value/:type/:name", h.getMetricHandler)
 
@@ -223,6 +226,24 @@ func (h *Handler) getMetricHandler(c *gin.Context) {
 
 	// Возвращаем значение метрики
 	c.String(http.StatusOK, value)
+}
+
+func (h *Handler) updateBatch(c *gin.Context) {
+	var items []models.Metrics
+	if err := c.ShouldBindJSON(&items); err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	if len(items) == 0 {
+		// пустые батчи не отправляем; если прилетели — считаем это ошибкой клиента
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	if err := h.metricsService.UpdateBatch(items); err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	c.Status(http.StatusOK)
 }
 
 // getAllMetricsHandler обрабатывает GET / - возвращает HTML со всеми метриками

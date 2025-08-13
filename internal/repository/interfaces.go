@@ -2,6 +2,8 @@ package repository
 
 import (
 	"time"
+
+	"github.com/makgig/factory/internal/models"
 )
 
 // MetricStorage интерфейс для работы с метриками в памяти
@@ -32,4 +34,9 @@ type Storage interface {
 	MetricStorage
 	FilePersist
 	BackgroundSaver
+}
+
+// BatchUpdater — опциональный, умеет обновлять метрики пачкой.
+type BatchUpdater interface {
+	UpdateBatch(metrics []models.Metrics) error
 }
