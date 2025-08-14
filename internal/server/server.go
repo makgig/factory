@@ -2,12 +2,18 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gin-gonic/gin"
 	"github.com/makgig/factory/internal/config"
@@ -26,12 +32,25 @@ type Server struct {
 	metricsService *service.MetricsService
 	httpServer     *http.Server
 	router         *gin.Engine
+	db             *pgxpool.Pool
+	openPool       openPoolFunc
+	pingPool       pingPoolFunc
+	newMigrator    newMigratorFunc
+	closePool      func(*pgxpool.Pool)
 }
 
 // New создает новый экземпляр сервера
 func New(cfg *config.ServerConfig) *Server {
 	return &Server{
-		cfg: cfg,
+		cfg:         cfg,
+		openPool:    openPoolDefault,
+		pingPool:    pingPoolDefault,
+		newMigrator: newMigratorDefault,
+		closePool: func(p *pgxpool.Pool) {
+			if p != nil {
+				p.Close()
+			}
+		},
 	}
 }
 
@@ -39,6 +58,11 @@ func New(cfg *config.ServerConfig) *Server {
 func (s *Server) Initialize() error {
 	// Инициализируем логер
 	if err := s.initializeLogger(); err != nil {
+		return err
+	}
+
+	// Инициализируем базу данных
+	if err := s.initializeDatabase(); err != nil {
 		return err
 	}
 
@@ -97,6 +121,12 @@ func (s *Server) Stop(ctx context.Context) error {
 	// Сохраняем финальные метрики
 	s.saveFinalMetrics()
 
+	// корректно закрываем пул БД
+	if s.db != nil {
+		s.closePool(s.db)
+		s.db = nil
+	}
+
 	// Останавливаем HTTP сервер
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		logger.Log.Error("Ошибка graceful shutdown", zap.Error(err))
@@ -123,8 +153,67 @@ func (s *Server) initializeLogger() error {
 	return nil
 }
 
+// initializeDatabase настраивает подключение к базе данных
+func (s *Server) initializeDatabase() error {
+	if s.cfg.DatabaseDSN == "" {
+		logger.Log.Info("DATABASE_DSN пуст — подключение к БД пропущено")
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := s.openPool(ctx, s.cfg.DatabaseDSN)
+	if err != nil {
+		logger.Log.Error("не удалось подключиться к БД: %v", zap.Error(err))
+		return fmt.Errorf("open pool: %w", err)
+	}
+
+	// Проверка соединения
+	if err := s.pingPool(ctx, pool); err != nil {
+		logger.Log.Error("БД недоступна: %v", zap.Error(err))
+		s.closePool(pool)
+		return fmt.Errorf("db ping: %w", err)
+	}
+
+	// Инициализация и запуск миграций
+	m, err := s.newMigrator(s.cfg.DatabaseDSN)
+	if err != nil {
+		logger.Log.Error(
+			"не удалось инициализировать миграции",
+			zap.Error(err),
+			zap.String("hint", "проверьте, что папка 'migrations/' существует и содержит SQL-файлы, а DATABASE_DSN корректен"),
+		)
+		s.closePool(pool)
+		return fmt.Errorf("migrator new: %w", err)
+	}
+
+	if err := m.Up(); err != nil {
+		if err == migrate.ErrNoChange {
+			logger.Log.Info("Нет новых миграций — структура БД уже актуальна")
+		} else {
+			logger.Log.Error("ошибка применения миграций: %v", zap.Error(err))
+			s.closePool(pool)
+			return fmt.Errorf("migrator up: %w", err)
+		}
+	} else {
+		logger.Log.Info("Миграции успешно применены")
+	}
+
+	s.db = pool
+	logger.Log.Info("Подключение к БД установлено (pgxpool)")
+	return nil
+}
+
 // initializeStorage настраивает хранилище метрик
 func (s *Server) initializeStorage() error {
+	// если БД инициализирована — используем её
+	if s.db != nil {
+		s.storage = repository.NewPostgres(s.db)
+		logger.Log.Info("Используется хранилище PostgreSQL")
+		return nil
+	}
+
 	// Создаем хранилище
 	s.storage = repository.New(s.cfg.FileStoragePath)
 
@@ -275,6 +364,10 @@ func (s *Server) setupRouter() {
 	s.router.Use(middleware.Logger())
 	s.router.Use(middleware.RequestDecompression())
 	s.router.Use(middleware.ResponseCompression())
+
+	// health маршруты
+	health := handler.NewHealth(s.db)
+	health.SetupRoutes(s.router)
 
 	// Настраиваем маршруты
 	h := handler.New(s.metricsService)

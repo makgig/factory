@@ -51,9 +51,11 @@ func (a *Agent) Run(pollInterval, reportInterval time.Duration) error {
 				len(metrics.Gauges), len(metrics.Counters))
 
 			// Отправляем метрики на сервер
-			if err := a.sender.SendMetrics(metrics); err != nil {
-				log.Printf("Ошибка отправки метрик: %v", err)
-			}
+			// if err := a.sender.SendMetrics(metrics); err != nil {
+			// 	log.Printf("Ошибка отправки метрик: %v", err)
+			// }
+
+			a.sender.SendAll(metrics)
 
 			lastReport = time.Now()
 		}

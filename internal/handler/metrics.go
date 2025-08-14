@@ -34,6 +34,9 @@ func (h *Handler) SetupRoutes(router *gin.Engine) {
 
 	router.POST("/value", middleware.JSONContentType(), h.getMetricJSONHandler)
 
+	// батчевое обновление (строго по ТЗ — со слэшем на конце)
+	router.POST("/updates/", middleware.JSONContentType(), h.updateBatch)
+
 	// Роут для получения конкретной метрики - только GET
 	router.GET("/value/:type/:name", h.getMetricHandler)
 
@@ -45,13 +48,11 @@ func (h *Handler) SetupRoutes(router *gin.Engine) {
 func (h *Handler) getMetricJSONHandler(c *gin.Context) {
 	var request models.Metrics
 
-	// Парсим JSON из тела запроса
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
 
-	// Валидируем обязательные поля
 	if request.ID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "metric id is required"})
 		return
@@ -62,7 +63,6 @@ func (h *Handler) getMetricJSONHandler(c *gin.Context) {
 		return
 	}
 
-	// Получаем значение метрики через сервис
 	valueStr, err := h.metricsService.GetMetric(request.MType, request.ID)
 	if err != nil {
 		switch {
@@ -76,16 +76,13 @@ func (h *Handler) getMetricJSONHandler(c *gin.Context) {
 		return
 	}
 
-	// Формируем ответ с заполненными значениями
 	response := models.Metrics{
 		ID:    request.ID,
 		MType: request.MType,
 	}
 
-	// Заполняем соответствующее поле в зависимости от типа
 	switch request.MType {
 	case "gauge":
-		// Парсим значение как float64
 		value, err := strconv.ParseFloat(valueStr, 64)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse gauge value"})
@@ -94,7 +91,6 @@ func (h *Handler) getMetricJSONHandler(c *gin.Context) {
 		response.Value = &value
 
 	case "counter":
-		// Парсим значение как int64
 		delta, err := strconv.ParseInt(valueStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse counter value"})
@@ -110,13 +106,11 @@ func (h *Handler) getMetricJSONHandler(c *gin.Context) {
 func (h *Handler) updateMetricJSONHandler(c *gin.Context) {
 	var metric models.Metrics
 
-	// Парсим JSON из тела запроса
 	if err := c.ShouldBindJSON(&metric); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
 
-	// Валидируем обязательные поля
 	if metric.ID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "metric id is required"})
 		return
@@ -127,17 +121,13 @@ func (h *Handler) updateMetricJSONHandler(c *gin.Context) {
 		return
 	}
 
-	// Обрабатываем в зависимости от типа метрики
 	switch metric.MType {
 	case "gauge":
 		if metric.Value == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "value is required for gauge metric"})
 			return
 		}
-
-		// Используем существующий метод сервиса
-		err := h.metricsService.UpdateMetric("gauge", metric.ID, fmt.Sprintf("%g", *metric.Value))
-		if err != nil {
+		if err := h.metricsService.UpdateMetric("gauge", metric.ID, fmt.Sprintf("%g", *metric.Value)); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update metric"})
 			return
 		}
@@ -147,10 +137,7 @@ func (h *Handler) updateMetricJSONHandler(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "delta is required for counter metric"})
 			return
 		}
-
-		// Используем существующий метод сервиса
-		err := h.metricsService.UpdateMetric("counter", metric.ID, fmt.Sprintf("%d", *metric.Delta))
-		if err != nil {
+		if err := h.metricsService.UpdateMetric("counter", metric.ID, fmt.Sprintf("%d", *metric.Delta)); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update metric"})
 			return
 		}
@@ -160,29 +147,24 @@ func (h *Handler) updateMetricJSONHandler(c *gin.Context) {
 		return
 	}
 
-	// Возвращаем успешный ответ
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // updateMetricHandler обрабатывает POST /update/<ТИП>/<ИМЯ>/<ЗНАЧЕНИЕ>
 func (h *Handler) updateMetricHandler(c *gin.Context) {
-	// Проверяем метод - только POST разрешен
 	if c.Request.Method != http.MethodPost {
 		c.String(http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
-	// Получаем параметры из URL
 	metricType := c.Param("type")
 	metricName := c.Param("name")
 	metricValue := c.Param("value")
 
-	// Проверяем что имя метрики не пустое
 	if metricName == "" {
 		c.String(http.StatusNotFound, "metric name is required")
 		return
 	}
 
-	// Вызываем сервис для обработки
 	if err := h.metricsService.UpdateMetric(metricType, metricName, metricValue); err != nil {
 		switch {
 		case errors.Is(err, service.ErrMetricNameRequired):
@@ -201,11 +183,9 @@ func (h *Handler) updateMetricHandler(c *gin.Context) {
 
 // getMetricHandler обрабатывает GET /value/<ТИП>/<ИМЯ>
 func (h *Handler) getMetricHandler(c *gin.Context) {
-	// Получаем параметры из URL
 	metricType := c.Param("type")
 	metricName := c.Param("name")
 
-	// Получаем метрику через сервис
 	value, err := h.metricsService.GetMetric(metricType, metricName)
 	if err != nil {
 		switch {
@@ -220,17 +200,30 @@ func (h *Handler) getMetricHandler(c *gin.Context) {
 		}
 		return
 	}
-
-	// Возвращаем значение метрики
 	c.String(http.StatusOK, value)
+}
+
+func (h *Handler) updateBatch(c *gin.Context) {
+	var items []models.Metrics
+	if err := c.ShouldBindJSON(&items); err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	if len(items) == 0 {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	if err := h.metricsService.UpdateBatch(items); err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	c.Status(http.StatusOK)
 }
 
 // getAllMetricsHandler обрабатывает GET / - возвращает HTML со всеми метриками
 func (h *Handler) getAllMetricsHandler(c *gin.Context) {
-	// Получаем все метрики
 	metrics := h.metricsService.GetAllMetrics()
 
-	// Генерируем простой HTML
 	html := `<!DOCTYPE html>
 <html>
 <head>
@@ -257,7 +250,6 @@ func (h *Handler) getAllMetricsHandler(c *gin.Context) {
 </body>
 </html>`
 
-	// Отправляем HTML
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, html)
 }

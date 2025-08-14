@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/makgig/factory/internal/models"
 	"github.com/makgig/factory/internal/repository"
 )
 
@@ -103,4 +104,26 @@ func (s *MetricsService) GetAllMetrics() MetricsData {
 		Gauges:   s.storage.GetAllGauges(),
 		Counters: s.storage.GetAllCounters(),
 	}
+}
+
+func (s *MetricsService) UpdateBatch(items []models.Metrics) error {
+	if len(items) == 0 {
+		return nil
+	}
+	if bu, ok := s.storage.(repository.BatchUpdater); ok {
+		return bu.UpdateBatch(items)
+	}
+	for _, m := range items {
+		switch m.MType {
+		case "gauge":
+			if m.Value != nil {
+				s.storage.UpdateGauge(m.ID, *m.Value)
+			}
+		case "counter":
+			if m.Delta != nil {
+				s.storage.UpdateCounter(m.ID, *m.Delta)
+			}
+		}
+	}
+	return nil
 }
