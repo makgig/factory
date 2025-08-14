@@ -247,7 +247,6 @@ func (m *MemStorage) UpdateBatch(items []models.Metrics) error {
 	}
 	m.mu.Unlock()
 
-	// при syncSave + файловом пути — сохраним сразу
 	if m.syncSave && m.filePath != "" {
 		return m.SaveToFile()
 	}

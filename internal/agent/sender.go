@@ -3,16 +3,32 @@ package agent
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"syscall"
 
 	"github.com/makgig/factory/internal/models"
 
 	"net/http"
 	"time"
 )
+
+const (
+	netRetryDelayShort  = 1 * time.Second
+	netRetryDelayMedium = 3 * time.Second
+	netRetryDelayLong   = 5 * time.Second
+)
+
+var netRetrySchedule = []time.Duration{
+	netRetryDelayShort,
+	netRetryDelayMedium,
+	netRetryDelayLong,
+}
 
 // Sender отправляет метрики на сервер по HTTP
 type Sender struct {
@@ -77,50 +93,59 @@ func (s *Sender) sendCounter(name string, value int64) error {
 	return s.sendJSONMetric(metric)
 }
 
-func (s *Sender) sendJSONMetric(metric models.Metrics) error {
-	// Сериализуем в JSON
-	jsonData, err := json.Marshal(metric)
+func (s *Sender) sendJSONMetric(m models.Metrics) error {
+	raw, err := json.Marshal(m)
 	if err != nil {
-		return fmt.Errorf("ошибка сериализации JSON: %w", err)
+		return fmt.Errorf("marshal metric: %w", err)
 	}
 
-	// Сжимаем JSON данные
-	var compressedData bytes.Buffer
-	gzWriter := gzip.NewWriter(&compressedData)
-	if _, err := gzWriter.Write(jsonData); err != nil {
-		return fmt.Errorf("ошибка сжатия данных: %w", err)
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(raw); err != nil {
+		return fmt.Errorf("gzip write: %w", err)
 	}
-	if err := gzWriter.Close(); err != nil {
-		return fmt.Errorf("ошибка финализации сжатия: %w", err)
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("gzip close: %w", err)
 	}
+	payload := buf.Bytes()
 
-	// Формируем URL для нового эндпоинта
+	delays := netRetrySchedule
+
 	url := fmt.Sprintf("%s/update", s.serverURL)
 
-	// Создаем запрос с JSON телом
-	req, err := http.NewRequest("POST", url, bytes.NewReader(compressedData.Bytes()))
-	if err != nil {
-		return fmt.Errorf("создание запроса: %w", err)
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return fmt.Errorf("new request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
+		req.ContentLength = int64(len(payload))
+		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(payload)), nil }
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			if isNetRetriable(err) && attempt < len(delays) {
+				time.Sleep(delays[attempt])
+				continue
+			}
+			return fmt.Errorf("metric do: %w", err)
+		}
+		resp.Body.Close()
+
+		switch resp.StatusCode {
+		case http.StatusOK:
+			return nil
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			if attempt < len(delays) {
+				time.Sleep(delays[attempt])
+				continue
+			}
+			return fmt.Errorf("metric http %d", resp.StatusCode)
+		default:
+			return fmt.Errorf("metric response status: %d", resp.StatusCode)
+		}
 	}
-
-	// Устанавливаем заголовки
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
-	req.Header.Set("Accept-Encoding", "gzip")
-
-	// Выполняем запрос
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("выполнение запроса: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Проверяем статус ответа
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("сервер вернул статус %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
 // SendBatch отправляет []Metrics на POST /updates/ с gzip.
@@ -130,45 +155,66 @@ func (s *Sender) SendBatch(items []models.Metrics) error {
 		return nil
 	}
 
-	// JSON
-	body, err := json.Marshal(items)
+	raw, err := json.Marshal(items)
 	if err != nil {
 		return fmt.Errorf("marshal batch: %w", err)
 	}
 
-	// gzip
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
-	if _, err := gz.Write(body); err != nil {
+	if _, err := gz.Write(raw); err != nil {
 		return fmt.Errorf("gzip write: %w", err)
 	}
 	if err := gz.Close(); err != nil {
 		return fmt.Errorf("gzip close: %w", err)
 	}
+	payload := buf.Bytes()
 
-	// Формируем URL
-	url := s.serverURL + "/updates/"
+	delays := netRetrySchedule
+	var last error
 
-	req, err := http.NewRequest(http.MethodPost, url, &buf)
-	if err != nil {
-		return fmt.Errorf("new request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
+	url := fmt.Sprintf("%s/updates/", s.serverURL)
 
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("do request: %w", err)
-	}
-	defer resp.Body.Close()
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return fmt.Errorf("new request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
+		req.ContentLength = int64(len(payload))
+		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(payload)), nil }
 
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return nil
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
-		return ErrBatchUnsupported
-	default:
-		return fmt.Errorf("batch response status: %d", resp.StatusCode)
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			if isNetRetriable(err) && attempt < len(delays) {
+				last = fmt.Errorf("batch do: %w", err)
+				time.Sleep(delays[attempt])
+				continue
+			}
+			return fmt.Errorf("batch do: %w", err)
+		}
+		func() {
+			defer resp.Body.Close()
+			switch resp.StatusCode {
+			case http.StatusOK:
+				last = nil
+			case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+				last = ErrBatchUnsupported
+			case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+				if attempt < len(delays) {
+					last = fmt.Errorf("batch http %d", resp.StatusCode)
+				} else {
+					last = fmt.Errorf("batch http %d", resp.StatusCode)
+				}
+			default:
+				last = fmt.Errorf("batch response status: %d", resp.StatusCode)
+			}
+		}()
+		if last == nil || errors.Is(last, ErrBatchUnsupported) || attempt >= len(delays) {
+			return last
+		}
+		time.Sleep(delays[attempt])
 	}
 }
 
@@ -209,4 +255,18 @@ func (s *Sender) SendAll(all AllMetrics) {
 	}
 
 	log.Println("Метрики успешно отправлены батчем.")
+}
+
+func isNetRetriable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	return errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, context.DeadlineExceeded)
 }

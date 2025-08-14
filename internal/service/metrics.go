@@ -110,11 +110,9 @@ func (s *MetricsService) UpdateBatch(items []models.Metrics) error {
 	if len(items) == 0 {
 		return nil
 	}
-	// если хранилище умеет батч — используем
 	if bu, ok := s.storage.(repository.BatchUpdater); ok {
 		return bu.UpdateBatch(items)
 	}
-	// иначе — поштучно, но единым кодом
 	for _, m := range items {
 		switch m.MType {
 		case "gauge":

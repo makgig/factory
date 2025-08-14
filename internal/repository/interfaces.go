@@ -36,7 +36,7 @@ type Storage interface {
 	BackgroundSaver
 }
 
-// BatchUpdater — опциональный, умеет обновлять метрики пачкой.
+// BatchUpdater — опциональная возможность хранилища обновлять метрики пачкой.
 type BatchUpdater interface {
-	UpdateBatch(metrics []models.Metrics) error
+	UpdateBatch(items []models.Metrics) error
 }

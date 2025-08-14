@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -165,14 +166,14 @@ func (s *Server) initializeDatabase() error {
 	pool, err := s.openPool(ctx, s.cfg.DatabaseDSN)
 	if err != nil {
 		logger.Log.Error("не удалось подключиться к БД: %v", zap.Error(err))
-		return err
+		return fmt.Errorf("open pool: %w", err)
 	}
 
 	// Проверка соединения
 	if err := s.pingPool(ctx, pool); err != nil {
 		logger.Log.Error("БД недоступна: %v", zap.Error(err))
 		s.closePool(pool)
-		return err
+		return fmt.Errorf("db ping: %w", err)
 	}
 
 	// Инициализация и запуск миграций
@@ -184,7 +185,7 @@ func (s *Server) initializeDatabase() error {
 			zap.String("hint", "проверьте, что папка 'migrations/' существует и содержит SQL-файлы, а DATABASE_DSN корректен"),
 		)
 		s.closePool(pool)
-		return err
+		return fmt.Errorf("migrator new: %w", err)
 	}
 
 	if err := m.Up(); err != nil {
@@ -193,7 +194,7 @@ func (s *Server) initializeDatabase() error {
 		} else {
 			logger.Log.Error("ошибка применения миграций: %v", zap.Error(err))
 			s.closePool(pool)
-			return err
+			return fmt.Errorf("migrator up: %w", err)
 		}
 	} else {
 		logger.Log.Info("Миграции успешно применены")
